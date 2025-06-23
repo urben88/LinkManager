@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: linkmanager_web
+    ports:
+      - "80:5000" # Mapea el puerto 80 del host al puerto 5000 del contenedor
+    volumes:
+      - .:/app  # Monta el código fuente actual en /app dentro del contenedor (para desarrollo)
+      - ./database.db:/app/database.db # Monta el archivo de la base de datos
+    environment:
+      - FLASK_ENV=production # O 'development' si prefieres
+      # - FLASK_APP=app.py  # No es estrictamente necesario si usas Gunicorn como en el CMD
+      # - FLASK_DEBUG=0     # Para producción, el debug debe estar apagado
+    restart: unless-stopped
+    # command: flask run --host=0.0.0.0 # Descomentar si prefieres usar el servidor de desarrollo de Flask
+                                      # y comenta el CMD de Gunicorn en el Dockerfile

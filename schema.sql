@@ -1,0 +1,26 @@
+DROP TABLE IF EXISTS entry_urls;
+DROP TABLE IF EXISTS link_entries;
+DROP TABLE IF EXISTS sections;
+
+CREATE TABLE IF NOT EXISTS sections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS link_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    description TEXT,
+    image_url TEXT, 
+    section_id INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (section_id) REFERENCES sections (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS entry_urls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    link_entry_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    label TEXT, 
+    FOREIGN KEY (link_entry_id) REFERENCES link_entries (id) ON DELETE CASCADE
+);
