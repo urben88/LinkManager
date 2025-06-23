@@ -3,30 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkManager - Mis Enlaces</title> <!-- Título de la pestaña del navegador -->
+    <title>LinkManager - Mis Enlaces</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Opcional: Añadir el logo como favicon -->
     <link rel="icon" href="{{ url_for('static', filename='images/icon.png') }}" type="image/png">
-    
 </head>
 <body>
-    <header>
+    <header class="site-header">
         <div class="header-content">
-            <img width="200px" src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager Logo" class="header-logo">
+            <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager Logo" class="header-logo">
         </div>
-        <div class="actions-bar">
+        <nav class="actions-bar">
             <button id="openAddSectionModalBtn" class="action-btn">
-                <i class="fas fa-folder-plus"></i> Nueva Sección
+                <i class="fas fa-folder-plus"></i><span class="btn-text">Nueva Sección</span>
             </button>
             <button id="openAddLinkModalBtn" class="action-btn">
-                <i class="fas fa-plus-circle"></i> Nueva Entrada
+                <i class="fas fa-plus-circle"></i><span class="btn-text">Nueva Entrada</span>
             </button>
-        </div>
+        </nav>
     </header>
 
-    <main>
-        {# Mostrar mensajes flash #}
+    <main class="main-content">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="flash-messages">
@@ -43,28 +40,28 @@
             {% endif %}
             {% for section in sections_with_data %}
                 <section class="links-section">
-                    <div class="section-header">
-                        <h2>{{ section.name }}</h2>
+                    <header class="section-header">
+                        <h2 class="section-title">{{ section.name }}</h2>
                         <div class="section-actions">
                             <button class="edit-section-btn action-btn-sm" 
                                     data-section-id="{{ section.id }}" 
                                     data-section-name="{{ section.name }}"
                                     title="Editar sección">
-                                <i class="fas fa-edit"></i> Editar
+                                <i class="fas fa-edit"></i><span class="btn-text-sm">Editar</span>
                             </button>
                             <form class="inline-form" action="{{ url_for('delete_section', section_id=section.id) }}" method="POST" onsubmit="return confirm('¿Eliminar esta sección y TODAS sus entradas?');">
                                 <button type="submit" class="delete-section-btn action-btn-sm danger" title="Eliminar sección">
-                                    <i class="fas fa-trash-alt"></i> Eliminar
+                                    <i class="fas fa-trash-alt"></i><span class="btn-text-sm">Eliminar</span>
                                 </button>
                             </form>
                         </div>
-                    </div>
+                    </header>
                     {% if not section.link_entries %}
-                        <p>No hay entradas en esta sección.</p>
+                        <p class="no-entries-message">No hay entradas en esta sección.</p>
                     {% else %}
                         <div class="links-grid">
                             {% for entry in section.link_entries %}
-                                <div class="link-card">
+                                <article class="link-card">
                                     <div class="link-card-actions-top">
                                         <button class="edit-entry-btn action-btn-sm" 
                                                 data-entry-id="{{ entry.id }}"
@@ -77,19 +74,21 @@
                                             </button>
                                         </form>
                                     </div>
-                                    {% if entry.image_url %}
-                                        {% if entry.image_url.startswith('http') %}
-                                            <img src="{{ entry.image_url }}" alt="{{ entry.title }}" class="link-image" onerror="this.style.display='none'; this.parentElement.classList.add('no-image');">
+                                    <figure class="link-image-figure">
+                                        {% if entry.image_url %}
+                                            {% if entry.image_url.startswith('http') %}
+                                                <img src="{{ entry.image_url }}" alt="{{ entry.title }}" class="link-image" onerror="this.style.display='none'; this.parentElement.classList.add('no-image');">
+                                            {% else %}
+                                                <img src="{{ url_for('static', filename=entry.image_url) }}" alt="{{ entry.title }}" class="link-image" onerror="this.style.display='none'; this.parentElement.classList.add('no-image');">
+                                            {% endif %}
                                         {% else %}
-                                            <img src="{{ url_for('static', filename=entry.image_url) }}" alt="{{ entry.title }}" class="link-image" onerror="this.style.display='none'; this.parentElement.classList.add('no-image');">
+                                            <div class="link-image-placeholder">Sin Imagen</div>
                                         {% endif %}
-                                    {% else %}
-                                        <div class="link-image-placeholder">Sin Imagen</div>
-                                    {% endif %}
+                                    </figure>
                                     <div class="link-content">
-                                        <h3>{{ entry.title if entry.title else "Entrada sin título" }}</h3>
+                                        <h3 class="link-title">{{ entry.title if entry.title else "Entrada sin título" }}</h3>
                                         {% if entry.description %}
-                                            <p class="link-description">{{ entry.description[:150] }}{{ '...' if entry.description|length > 150 }}</p>
+                                            <p class="link-description">{{ entry.description[:120] }}{{ '...' if entry.description|length > 120 }}</p> {# Un poco más corto para móvil #}
                                         {% endif %}
                                         <div class="entry-url-list">
                                             <strong>Enlaces:</strong>
@@ -100,7 +99,7 @@
                                                         <span class="url-label">{{ item_url.label }}:</span>
                                                     {% endif %}
                                                     <a href="{{ item_url.url if item_url.url.startswith('http') else 'http://' + item_url.url }}" target="_blank" rel="noopener noreferrer" title="{{ item_url.url }}">
-                                                        {{ item_url.url | truncate(45, True, '...') }}
+                                                        {{ item_url.url | truncate(35, True, '...') }} {# Más corto para móvil #}
                                                     </a>
                                                 </li>
                                                 {% else %} <li>No hay URLs.</li>
@@ -108,7 +107,7 @@
                                             </ul>
                                         </div>
                                     </div>
-                                </div>
+                                </article>
                             {% endfor %}
                         </div>
                     {% endif %}
@@ -117,6 +116,7 @@
         </div>
     </main>
 
+    {# --- MODALES (estructura sin cambios significativos, los estilos los harán responsivos) --- #}
     <!-- Modal para Añadir Sección -->
     <div id="addSectionModal" class="modal">
         <div class="modal-content">
@@ -134,9 +134,9 @@
         <div class="modal-content">
             <span class="close-btn" data-modal-id="editSectionModal">×</span>
             <h2>Editar Sección</h2>
-            <form id="editSectionForm" method="POST"> <!-- action se establecerá en JS -->
+            <form id="editSectionForm" method="POST">
                 <input type="hidden" name="edit_section_id" id="edit_section_id_field">
-                <label for="edit_section_name_field">Nuevo nombre de la sección:</label>
+                <label for="edit_section_name_field">Nuevo nombre:</label>
                 <input type="text" name="edit_section_name" id="edit_section_name_field" required>
                 <button type="submit" class="primary-submit-btn">Guardar Cambios</button>
             </form>
@@ -147,27 +147,22 @@
     <div id="addLinkModal" class="modal">
         <div class="modal-content">
             <span class="close-btn" data-modal-id="addLinkModal">×</span>
-            <h2>Añadir Nueva Entrada de Enlace</h2>
+            <h2>Añadir Entrada</h2>
             <form id="addLinkForm" method="POST" action="{{ url_for('add_link_entry') }}">
                 <label for="linkTitleInputModal">Título (opcional):</label>
                 <input type="text" id="linkTitleInputModal" name="link_title" placeholder="Ej: Mi Proyecto X">
                 <label for="linkDescriptionInputModal">Descripción (opcional):</label>
                 <textarea id="linkDescriptionInputModal" name="link_description" rows="3" placeholder="Descripción personalizada..."></textarea>
                 <div id="urlFieldsContainerModal">
-                    <div class="url-field-group">
-                        <label for="url_0_url">URL 1:</label>
-                        <input type="url" id="url_0_url" name="urls[0][url]" placeholder="https://ejemplo.com (para previsualización)" required>
-                        <label for="url_0_label">Etiqueta URL 1 (opcional):</label>
-                        <input type="text" id="url_0_label" name="urls[0][label]" placeholder="Ej: Público, LAN">
-                    </div>
+                    {# El primer campo de URL se genera desde JS en el reset/init #}
                 </div>
-                <button type="button" id="addUrlFieldBtnModal" class="secondary-btn"> <i class="fas fa-plus"></i> Añadir otra URL</button>
+                <button type="button" id="addUrlFieldBtnModal" class="secondary-btn add-url-btn"> <i class="fas fa-plus"></i> Añadir otra URL</button>
                 <hr class="form-divider">
                 <label>Imagen Personalizada:</label>
                 <div id="imagePreviewContainer" class="image-preview-container">
                     <img id="pastedImagePreview" src="#" alt="Vista previa imagen pegada" style="display:none;" />
                     <div id="pasteHelperText" class="paste-helper-text">Pega una imagen (Ctrl+V) o se usará la de URL 1.</div>
-                    <button type="button" id="clearPastedImageBtn" class="secondary-btn danger-btn sm-btn" style="display:none; margin-top:5px;"><i class="fas fa-times"></i> Limpiar Imagen</button>
+                    <button type="button" id="clearPastedImageBtn" class="secondary-btn danger-btn sm-btn" style="display:none; margin-top:5px;"><i class="fas fa-times"></i> Limpiar</button>
                 </div>
                 <label style="margin-top:10px;">Previsualización Metadatos (URL 1):</label>
                 <div id="urlMetadataPreview" class="link-card-preview" style="display:none;">
@@ -188,53 +183,46 @@
     <div id="editLinkEntryModal" class="modal">
         <div class="modal-content">
             <span class="close-btn" data-modal-id="editLinkEntryModal">×</span>
-            <h2>Editar Entrada de Enlace</h2>
-            <form id="editLinkForm" method="POST"> <!-- action se establecerá en JS -->
+            <h2>Editar Entrada</h2>
+            <form id="editLinkForm" method="POST">
                 <input type="hidden" name="edit_entry_id" id="edit_entry_id_field">
-                
                 <label for="editLinkTitleInputModal">Título:</label>
                 <input type="text" id="editLinkTitleInputModal" name="edit_link_title" placeholder="Título de la entrada">
-                
                 <label for="editLinkDescriptionInputModal">Descripción:</label>
                 <textarea id="editLinkDescriptionInputModal" name="edit_link_description" rows="3" placeholder="Descripción personalizada..."></textarea>
-                
                 <div id="editUrlFieldsContainerModal">
-                    <!-- Los campos de URL para editar se cargarán aquí por JS -->
+                    {# Los campos de URL para editar se cargarán aquí por JS #}
                 </div>
-                <button type="button" id="addEditUrlFieldBtnModal" class="secondary-btn"> <i class="fas fa-plus"></i> Añadir otra URL</button>
-                
+                <button type="button" id="addEditUrlFieldBtnModal" class="secondary-btn add-url-btn"> <i class="fas fa-plus"></i> Añadir otra URL</button>
                 <hr class="form-divider">
-                
-                <label>Imagen Actual / Nueva Imagen Personalizada:</label>
+                <label>Imagen Actual / Nueva:</label>
                 <div id="editImagePreviewContainer" class="image-preview-container">
                     <img id="editPastedImagePreview" src="#" alt="Previsualización imagen actual/pegada" style="display:none;" />
                     <div id="editPasteHelperText" class="paste-helper-text">Pega nueva imagen (Ctrl+V) para reemplazar.</div>
-                    <input type="checkbox" name="delete_current_image" id="delete_current_image_checkbox" value="true" style="margin-top:5px;">
-                    <label for="delete_current_image_checkbox" style="display:inline-block; margin-left:5px; font-weight:normal;">Eliminar imagen actual (usará metadatos)</label>
-                    <button type="button" id="editClearPastedImageBtn" class="secondary-btn danger-btn sm-btn" style="display:none; margin-top:5px;"><i class="fas fa-times"></i> Limpiar Imagen Pegada</button>
+                    <div class="image-options">
+                        <input type="checkbox" name="delete_current_image" id="delete_current_image_checkbox" value="true">
+                        <label for="delete_current_image_checkbox">Eliminar imagen actual (usará metadatos)</label>
+                    </div>
+                    <button type="button" id="editClearPastedImageBtn" class="secondary-btn danger-btn sm-btn" style="display:none; margin-top:5px;"><i class="fas fa-times"></i> Limpiar Pegada</button>
                 </div>
-                
                 <label for="editSectionSelectModal" style="margin-top:15px;">Sección:</label>
                 <select name="edit_section_id" id="editSectionSelectModal" required>
                     <option value="" disabled>-- Selecciona --</option>
-                    {# Las opciones se pueden llenar dinámicamente o mantener una lista completa #}
                     {% for section in all_sections %}<option value="{{ section.id }}">{{ section.name }}</option>{% endfor %}
                 </select>
-                
                 <button type="submit" class="primary-submit-btn">Guardar Cambios</button>
             </form>
         </div>
     </div>
     
-    {# Plantilla para un grupo de campos de URL (usado por JS para añadir y editar) #}
+    {# Plantillas para campos de URL dinámicos (usadas por JS) #}
     <template id="urlFieldTemplate">
         <div class="url-field-group">
             <hr class="form-divider-light">
-            <input type="hidden" name="urls[INDEX][id]" class="url-id-field"> {/* Para IDs de URLs existentes en edición */}
-            <label>URL <span class="url-field-number"></span>:</label>
-            <input type="url" name="urls[INDEX][url]" class="url-input-field" placeholder="https://ejemplo.com" required>
-            <label>Etiqueta URL <span class="url-field-number"></span> (opcional):</label>
-            <input type="text" name="urls[INDEX][label]" class="label-input-field" placeholder="Ej: Público, LAN">
+            <label class="url-field-dynamic-label" for="urls_INDEX_url">URL <span class="url-field-number"></span>:</label>
+            <input type="url" name="urls[INDEX][url]" class="url-input-field" id="urls_INDEX_url" placeholder="https://ejemplo.com" required>
+            <label class="url-field-dynamic-label" for="urls_INDEX_label">Etiqueta URL <span class="url-field-number"></span> (opcional):</label>
+            <input type="text" name="urls[INDEX][label]" class="label-input-field" id="urls_INDEX_label" placeholder="Ej: Público, LAN">
             <button type="button" class="removeUrlFieldBtn secondary-btn danger-btn"><i class="fas fa-times"></i> Eliminar URL</button>
         </div>
     </template>
@@ -242,14 +230,13 @@
         <div class="url-field-group">
             <hr class="form-divider-light">
             <input type="hidden" name="edit_urls[INDEX][id]" class="edit-url-id-field">
-            <label>URL <span class="edit-url-field-number"></span>:</label>
-            <input type="url" name="edit_urls[INDEX][url]" class="edit-url-input-field" placeholder="https://ejemplo.com" required>
-            <label>Etiqueta URL <span class="edit-url-field-number"></span> (opcional):</label>
-            <input type="text" name="edit_urls[INDEX][label]" class="edit-label-input-field" placeholder="Ej: Público, LAN">
+            <label class="url-field-dynamic-label" for="edit_urls_INDEX_url">URL <span class="edit-url-field-number"></span>:</label>
+            <input type="url" name="edit_urls[INDEX][url]" class="edit-url-input-field" id="edit_urls_INDEX_url" placeholder="https://ejemplo.com" required>
+            <label class="url-field-dynamic-label" for="edit_urls_INDEX_label">Etiqueta URL <span class="edit-url-field-number"></span> (opcional):</label>
+            <input type="text" name="edit_urls[INDEX][label]" class="edit-label-input-field" id="edit_urls_INDEX_label" placeholder="Ej: Público, LAN">
             <button type="button" class="removeEditUrlFieldBtn secondary-btn danger-btn"><i class="fas fa-times"></i> Eliminar URL</button>
         </div>
     </template>
-
 
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
