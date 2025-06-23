@@ -3,13 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mis Enlaces Guardados</title>
+    <title>LinkManager - Mis Enlaces</title> <!-- Título de la pestaña del navegador -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Opcional: Añadir el logo como favicon -->
+    <link rel="icon" href="{{ url_for('static', filename='images/icon.png') }}" type="image/png">
+    
 </head>
 <body>
     <header>
-        <h1>Mis Enlaces</h1>
+        <div class="header-content">
+            <img width="200px" src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager Logo" class="header-logo">
+        </div>
         <div class="actions-bar">
             <button id="openAddSectionModalBtn" class="action-btn">
                 <i class="fas fa-folder-plus"></i> Nueva Sección
