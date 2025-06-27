@@ -47,7 +47,7 @@ def init_db():
             with app.open_resource('schema.sql', mode='r') as f:
                 db.cursor().executescript(f.read())
             db.commit()
-            print("Base de datos inicializada con el nuevo esquema.")
+            print("Base de datos inicializada con el esquema.")
         except Exception as e:
             print(f"Error al inicializar la base de datos desde schema.sql: {e}")
 
@@ -131,7 +131,6 @@ def index():
 def update_settings():
     db = get_db()
     try:
-        # Aseguramos que las URLs tengan protocolo para un parseo correcto en el frontend
         def format_url(url_string):
             if not url_string.strip():
                 return ''
@@ -235,7 +234,6 @@ def add_link_entry():
     description_from_form = request.form.get('link_description', '').strip()
     section_id = request.form.get('section_id')
 
-    # --- VALIDACIÓN DE TÍTULO OBLIGATORIO ---
     if not title_from_form:
         flash("El título de la entrada es obligatorio.", "error")
         return redirect(url_for('index'))
@@ -244,10 +242,8 @@ def add_link_entry():
     i = 0
     while f'urls[{i}][type]' in request.form:
         link_type = request.form[f'urls[{i}][type]']
-        # La etiqueta ahora es opcional
         label = request.form.get(f'urls[{i}][label]', '').strip() 
         value = request.form.get(f'urls[{i}][value]', '').strip()
-        # Solo se requiere que el valor (puerto, subdominio o URL) exista
         if value:
             urls_data.append({'label': label, 'link_type': link_type, 'value': value})
         i += 1
@@ -268,7 +264,6 @@ def add_link_entry():
         except Exception as e:
             print(f"Error al guardar imagen: {e}")
     
-    # Si no hay imagen, intentamos obtenerla de metadatos (solo si hay URL externa)
     if not image_url_to_save:
         first_external_url = next((u['value'] for u in urls_data if u['link_type'] == 'external_url'), None)
         if first_external_url:
@@ -295,10 +290,8 @@ def add_link_entry():
 def edit_link_entry(entry_id):
     title = request.form.get('link_title', '').strip()
     
-    # --- VALIDACIÓN DE TÍTULO OBLIGATORIO ---
     if not title:
         flash("El título no puede estar vacío.", "error")
-        # Aquí sería ideal recargar el modal, pero por simplicidad redirigimos
         return redirect(url_for('index'))
 
     db = get_db()
@@ -348,7 +341,6 @@ def edit_link_entry(entry_id):
         label = request.form.get(f'urls[{i}][label]', '').strip()
         link_type = request.form.get(f'urls[{i}][type]')
         value = request.form.get(f'urls[{i}][value]', '').strip()
-        # Solo se requiere que el valor exista, no la etiqueta
         if value:
             submitted_urls.append({'id': url_id, 'label': label, 'link_type': link_type, 'value': value})
         i += 1
@@ -423,7 +415,13 @@ def get_entry_details(entry_id):
 
     return jsonify(entry_dict)
 
+def check_and_create_db():
+    """Comprueba si la base de datos existe, si no, la inicializa."""
+    if not os.path.exists(DATABASE):
+        print(f"Base de datos no encontrada en '{DATABASE}'. Creando una nueva...")
+        init_db()
+        print("Base de datos creada y lista.")
+
 if __name__ == '__main__':
-    # Descomenta la siguiente línea UNA SOLA VEZ para crear/reiniciar la base de datos
-    # init_db()
+    check_and_create_db()
     app.run(debug=True, host='0.0.0.0')
