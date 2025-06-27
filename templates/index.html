@@ -1,37 +1,40 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LinkManager</title>
-    
+
     <!-- Dependencias de Estilos -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-    
+
     <!-- Archivo de Estilos Personalizado -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    
+
     <!-- Icono de la pestaña -->
     <link rel="icon" href="{{ url_for('static', filename='images/icon.png') }}">
 
     <!-- SortableJS para Drag & Drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 </head>
+
 <body>
     <div class="main-container">
 
         <!-- ==================== CABECERA ==================== -->
         <header class="main-header">
             <div class="logo-container">
-                <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager Logo" class="logo">
+                <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager Logo"
+                    class="logo">
             </div>
             <div class="header-actions">
                 <div class="edit-mode-toggle">
                     <input type="checkbox" id="edit-mode-checkbox">
                     <label for="edit-mode-checkbox" class="slider-label">Modo Edición</label>
                 </div>
-                
+
                 <button class="btn-header" data-toggle="modal" data-target="#settingsModal" title="Configuración">
                     <i class="fas fa-cog"></i>
                 </button>
@@ -46,18 +49,18 @@
 
         <!-- ==================== CONTENIDO PRINCIPAL ==================== -->
         <main class="content-area" id="sections-container">
-             <!-- Mensajes Flash -->
+            <!-- Mensajes Flash -->
             {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    <div class="flash-messages-container">
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                            {{ message }}
-                            <button type="button" class="close" data-dismiss="alert" aria-label="Close">×</button>
-                        </div>
-                    {% endfor %}
-                    </div>
-                {% endif %}
+            {% if messages %}
+            <div class="flash-messages-container">
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">×</button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
             {% endwith %}
 
             <!-- Bucle de Secciones -->
@@ -67,11 +70,14 @@
                     <h2>{{ section.name }}</h2>
                     <div class="section-actions admin-action">
                         <i class="fas fa-arrows-alt handle-icon" title="Arrastrar para reordenar"></i>
-                        <button class="btn btn-secondary" data-toggle="modal" data-target="#editSectionModal-{{ section.id }}">
+                        <button class="btn btn-secondary" data-toggle="modal"
+                            data-target="#editSectionModal-{{ section.id }}">
                             <i class="fas fa-pen"></i><span class="btn-text-desktop"> Editar</span>
                         </button>
-                        <form action="{{ url_for('delete_section', section_id=section.id) }}" method="post" class="d-inline">
-                            <button type="submit" class="btn btn-danger" onclick="return confirm('¿Seguro que quieres eliminar la sección \'{{ section.name }}\' y todo su contenido?');">
+                        <form action="{{ url_for('delete_section', section_id=section.id) }}" method="post"
+                            class="d-inline">
+                            <button type="submit" class="btn btn-danger"
+                                onclick="return confirm('¿Seguro que quieres eliminar la sección \'{{ section.name }}\' y todo su contenido?');">
                                 <i class="fas fa-trash"></i><span class="btn-text-desktop"> Eliminar</span>
                             </button>
                         </form>
@@ -82,17 +88,35 @@
                     {% for entry in section.link_entries %}
                     <div class="link-entry-card" data-id="{{ entry.id }}">
                         <div class="card-image-container">
-                            <img src="{{ entry.image_url if entry.image_url and (entry.image_url.startswith('http') or entry.image_url.startswith('uploads/')) else url_for('static', filename='images/icon.png') }}"
-                                 alt="Imagen para {{ entry.title }}"
-                                 onerror="this.onerror=null;this.src='{{ url_for('static', filename='images/icon.png') }}';">
+                            {# Definimos la fuente de la imagen por defecto #}
+                            {% set image_source = url_for('static', filename='images/icon.png') %}
+
+                            {# Si hay una URL en la base de datos, decidimos cómo usarla #}
+                            {% if entry.image_url %}
+                            {% if entry.image_url.startswith('uploads/') %}
+                            {# Es una imagen local subida, usamos url_for #}
+                            {% set image_source = url_for('static', filename=entry.image_url) %}
+                            {% elif entry.image_url.startswith('http') %}
+                            {# Es una URL externa, la usamos directamente #}
+                            {% set image_source = entry.image_url %}
+                            {% endif %}
+                            {% endif %}
+
+                            <img src="{{ image_source }}" alt="Imagen para {{ entry.title }}"
+                                onerror="this.onerror=null;this.src='{{ url_for('static', filename='images/icon.png') }}';">
                         </div>
                         <div class="card-content">
                             <div class="card-header-actions">
                                 <h5 class="card-title">{{ entry.title }}</h5>
                                 <div class="card-actions admin-action">
-                                    <button class="btn-card-action edit-entry-btn" data-entry-id="{{ entry.id }}" data-toggle="modal" data-target="#editLinkEntryModal" title="Editar"><i class="fas fa-pen"></i></button>
-                                    <form action="{{ url_for('delete_link_entry', entry_id=entry.id) }}" method="post" class="d-inline">
-                                        <button type="submit" class="btn-card-action" title="Eliminar" onclick="return confirm('¿Seguro que quieres eliminar la entrada \'{{ entry.title }}\'?');"><i class="fas fa-trash"></i></button>
+                                    <button class="btn-card-action edit-entry-btn" data-entry-id="{{ entry.id }}"
+                                        data-toggle="modal" data-target="#editLinkEntryModal" title="Editar"><i
+                                            class="fas fa-pen"></i></button>
+                                    <form action="{{ url_for('delete_link_entry', entry_id=entry.id) }}" method="post"
+                                        class="d-inline">
+                                        <button type="submit" class="btn-card-action" title="Eliminar"
+                                            onclick="return confirm('¿Seguro que quieres eliminar la entrada \'{{ entry.title }}\'?');"><i
+                                                class="fas fa-trash"></i></button>
                                     </form>
                                 </div>
                             </div>
@@ -101,11 +125,23 @@
                                 <h6 class="links-title">Enlaces:</h6>
                                 {% for url in entry.urls %}
                                 <div class="link-item">
-                                    <span class="link-label">{{ url.label }}:</span>
+                                  {% if url.label %}<span class="link-label">{{ url.label }}:</span>{% endif %}
+
                                     {% if url.link_type == 'internal_app' %}
-                                        <a href="#" class="dynamic-link" target="_blank" rel="noopener noreferrer" data-link-type="internal_app" data-port="{{ url.value }}"></a>
+                                    {# Enlace interno por puerto, el JS lo completará #}
+                                    <a href="#" class="dynamic-link" target="_blank" rel="noopener noreferrer"
+                                        data-link-type="internal_app" data-port="{{ url.value }}"></a>
+
+                                    {% elif url.link_type == 'subdomain' %}
+                                    {# Enlace por subdominio, el JS lo completará #}
+                                    <a href="#" class="dynamic-link" target="_blank" rel="noopener noreferrer"
+                                        data-link-type="subdomain" data-subdomain="{{ url.value }}"></a>
+
                                     {% else %}
-                                        <a href="{{ url.value }}" class="dynamic-link" target="_blank" rel="noopener noreferrer" data-link-type="external_url" data-value="{{ url.value }}">{{ url.value }}</a>
+                                    {# URL externa completa, se muestra directamente #}
+                                    <a href="{{ url.value }}" class="dynamic-link" target="_blank"
+                                        rel="noopener noreferrer" data-link-type="external_url"
+                                        data-value="{{ url.value }}">{{ url.value }}</a>
                                     {% endif %}
                                 </div>
                                 {% endfor %}
@@ -115,21 +151,30 @@
                     {% endfor %}
                 </div>
             </div>
-            
+
             <div class="modal fade" id="editSectionModal-{{ section.id }}" tabindex="-1">
-                <div class="modal-dialog"><div class="modal-content">
-                    <form action="{{ url_for('edit_section', section_id=section.id) }}" method="post">
-                        <div class="modal-header"><h5 class="modal-title">Editar Sección</h5><button type="button" class="close" data-dismiss="modal">×</button></div>
-                        <div class="modal-body"><input type="text" class="form-control" name="edit_section_name" value="{{ section.name }}" required></div>
-                        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
-                    </form>
-                </div></div>
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <form action="{{ url_for('edit_section', section_id=section.id) }}" method="post">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Editar Sección</h5><button type="button" class="close"
+                                    data-dismiss="modal">×</button>
+                            </div>
+                            <div class="modal-body"><input type="text" class="form-control" name="edit_section_name"
+                                    value="{{ section.name }}" required></div>
+                            <div class="modal-footer"><button type="button" class="btn btn-secondary"
+                                    data-dismiss="modal">Cancelar</button><button type="submit"
+                                    class="btn btn-primary">Guardar</button></div>
+                        </form>
+                    </div>
+                </div>
             </div>
             {% else %}
             <div class="empty-state">
                 <h3>Aún no hay nada por aquí.</h3>
                 <p>Empieza creando tu primera sección para organizar tus enlaces.</p>
-                <button class="btn btn-primary btn-lg" data-toggle="modal" data-target="#addSectionModal">Crear Primera Sección</button>
+                <button class="btn btn-primary btn-lg" data-toggle="modal" data-target="#addSectionModal">Crear Primera
+                    Sección</button>
             </div>
             {% endfor %}
 
@@ -144,64 +189,98 @@
     </div>
 
     <!-- #################### MODALES GLOBALES (AHORA COMPLETOS) #################### -->
-    
+
     <!-- MODAL DE CONFIGURACIÓN -->
     <div class="modal fade" id="settingsModal" tabindex="-1">
-         <div class="modal-dialog"><div class="modal-content">
-            <form action="{{ url_for('update_settings') }}" method="post">
-                <div class="modal-header"><h5 class="modal-title">Configuración de Entornos</h5><button type="button" class="close" data-dismiss="modal">×</button></div>
-                <div class="modal-body">
-                    <div class="form-group"><label>Dominio Público</label><input type="text" class="form-control" name="domain_public" value="{{ app_domains.get('public', '') }}"></div>
-                    <div class="form-group"><label>Dominio LAN</label><input type="text" class="form-control" name="domain_lan" value="{{ app_domains.get('lan', '') }}"></div>
-                    <div class="form-group"><label>Dominio Local</label><input type="text" class="form-control" name="domain_local" value="{{ app_domains.get('local', '') }}"></div>
-                </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
-            </form>
-        </div></div>
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ url_for('update_settings') }}" method="post">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Configuración de Entornos</h5><button type="button" class="close"
+                            data-dismiss="modal">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group"><label>URL Pública</label><input type="text" class="form-control"
+                                name="domain_public" value="{{ app_domains.get('public', '') }}"
+                                placeholder="https://dominio.com"></div>
+                        <div class="form-group"><label>URL LAN</label><input type="text" class="form-control"
+                                name="domain_lan" value="{{ app_domains.get('lan', '') }}"
+                                placeholder="http://192.168.1.100"></div>
+                        <div class="form-group"><label>URL Local</label><input type="text" class="form-control"
+                                name="domain_local" value="{{ app_domains.get('local', '') }}"
+                                placeholder="http://localhost"></div>
+                    </div>
+                    <div class="modal-footer"><button type="button" class="btn btn-secondary"
+                            data-dismiss="modal">Cancelar</button><button type="submit"
+                            class="btn btn-primary">Guardar</button></div>
+                </form>
+            </div>
+        </div>
     </div>
 
     <!-- MODAL AÑADIR SECCIÓN -->
     <div class="modal fade" id="addSectionModal" tabindex="-1">
-        <div class="modal-dialog"><div class="modal-content">
-            <form action="{{ url_for('add_section') }}" method="post">
-                <div class="modal-header"><h5 class="modal-title">Nueva Sección</h5><button type="button" class="close" data-dismiss="modal">×</button></div>
-                <div class="modal-body"><input type="text" class="form-control" name="section_name" placeholder="Nombre de la sección" required></div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary">Crear</button></div>
-            </form>
-        </div></div>
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ url_for('add_section') }}" method="post">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Nueva Sección</h5><button type="button" class="close"
+                            data-dismiss="modal">×</button>
+                    </div>
+                    <div class="modal-body"><input type="text" class="form-control" name="section_name"
+                            placeholder="Nombre de la sección" required></div>
+                    <div class="modal-footer"><button type="button" class="btn btn-secondary"
+                            data-dismiss="modal">Cancelar</button><button type="submit"
+                            class="btn btn-primary">Crear</button></div>
+                </form>
+            </div>
+        </div>
     </div>
 
     <!-- MODAL AÑADIR ENTRADA -->
     <div class="modal fade" id="addLinkEntryModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-                <form id="addLinkForm" action="{{ url_for('add_link_entry') }}" method="post" enctype="multipart/form-data">
-                    <div class="modal-header"><h5 class="modal-title">Añadir Nueva Entrada</h5><button type="button" class="close" data-dismiss="modal">×</button></div>
+                <form id="addLinkForm" action="{{ url_for('add_link_entry') }}" method="post"
+                    enctype="multipart/form-data">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Añadir Nueva Entrada</h5><button type="button" class="close"
+                            data-dismiss="modal">×</button>
+                    </div>
                     <div class="modal-body">
-                        <div class="form-group"><label>Título (Opcional)</label><input type="text" class="form-control" name="link_title" placeholder="Se autocompleta si se deja vacío"></div>
-                        <div class="form-group"><label>Descripción (Opcional)</label><textarea class="form-control" name="link_description" rows="2" placeholder="Se autocompleta si se deja vacío"></textarea></div>
+                       <div class="form-group"><label>Título</label><input type="text" class="form-control" name="link_title" placeholder="Título de la entrada (obligatorio)" required></div>
+                        <div class="form-group"><label>Descripción (Opcional)</label><textarea class="form-control"
+                                name="link_description" rows="2"
+                                placeholder="Se autocompleta si se deja vacío"></textarea></div>
                         <div class="form-row">
-                            <div class="form-group col-md-6"><label>Sección</label><select class="form-control" name="section_id" required>{% for s in all_sections %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></div>
+                            <div class="form-group col-md-6"><label>Sección</label><select class="form-control"
+                                    name="section_id" required>{% for s in all_sections %}<option value="{{ s.id }}">{{
+                                        s.name }}</option>{% endfor %}</select></div>
                             <div class="form-group col-md-6">
                                 <label>Imagen Personalizada</label>
                                 <div class="image-drop-zone" id="add-image-drop-zone">
                                     <div id="add-image-preview-container" class="image-preview-container">
                                         <span class="drop-zone-prompt">Arrastra, pega (Ctrl+V) o haz clic</span>
                                     </div>
-                                    <input type="file" class="form-control-file image-file-input" name="custom_image_file" accept="image/*">
+                                    <input type="file" class="form-control-file image-file-input"
+                                        name="custom_image_file" accept="image/*">
                                 </div>
                             </div>
                         </div>
-                        <hr><h6>Enlaces</h6>
+                        <hr>
+                        <h6>Enlaces</h6>
                         <div id="urls-container-add"></div>
-                        <button type="button" id="add-new-link-field" class="btn btn-secondary mt-2"><i class="fas fa-plus"></i> Añadir Enlace</button>
+                        <button type="button" id="add-new-link-field" class="btn btn-secondary mt-2"><i
+                                class="fas fa-plus"></i> Añadir Enlace</button>
                     </div>
-                    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary">Guardar Entrada</button></div>
+                    <div class="modal-footer"><button type="button" class="btn btn-secondary"
+                            data-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary">Guardar
+                            Entrada</button></div>
                 </form>
             </div>
         </div>
     </div>
-    
+
     <!-- MODAL EDITAR ENTRADA (Placeholder para JS) -->
     <div class="modal fade" id="editLinkEntryModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -220,4 +299,5 @@
     </script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
+
 </html>

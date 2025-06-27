@@ -131,9 +131,20 @@ def index():
 def update_settings():
     db = get_db()
     try:
-        db.execute("INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)", ('domain_public', request.form.get('domain_public', '').strip()))
-        db.execute("INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)", ('domain_lan', request.form.get('domain_lan', '').strip()))
-        db.execute("INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)", ('domain_local', request.form.get('domain_local', '').strip()))
+        # Aseguramos que las URLs tengan protocolo para un parseo correcto en el frontend
+        def format_url(url_string):
+            if not url_string.strip():
+                return ''
+            if not url_string.startswith(('http://', 'https://')):
+                return 'http://' + url_string
+            return url_string
+
+        db.execute("INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)", 
+                   ('domain_public', format_url(request.form.get('domain_public', ''))))
+        db.execute("INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)", 
+                   ('domain_lan', format_url(request.form.get('domain_lan', ''))))
+        db.execute("INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)", 
+                   ('domain_local', format_url(request.form.get('domain_local', ''))))
         db.commit()
         flash("Configuración de entorno actualizada.", "success")
     except sqlite3.Error as e:
@@ -223,18 +234,28 @@ def add_link_entry():
     title_from_form = request.form.get('link_title', '').strip()
     description_from_form = request.form.get('link_description', '').strip()
     section_id = request.form.get('section_id')
+
+    # --- VALIDACIÓN DE TÍTULO OBLIGATORIO ---
+    if not title_from_form:
+        flash("El título de la entrada es obligatorio.", "error")
+        return redirect(url_for('index'))
+
     urls_data = []
     i = 0
     while f'urls[{i}][type]' in request.form:
         link_type = request.form[f'urls[{i}][type]']
-        label = request.form.get(f'urls[{i}][label]', '').strip()
+        # La etiqueta ahora es opcional
+        label = request.form.get(f'urls[{i}][label]', '').strip() 
         value = request.form.get(f'urls[{i}][value]', '').strip()
-        if label and value:
+        # Solo se requiere que el valor (puerto, subdominio o URL) exista
+        if value:
             urls_data.append({'label': label, 'link_type': link_type, 'value': value})
         i += 1
+
     if not section_id or not urls_data:
-        flash("Sección y al menos un enlace válido son requeridos.", "error")
+        flash("Sección y al menos un enlace con valor son requeridos.", "error")
         return redirect(url_for('index'))
+
     image_url_to_save = None
     custom_image_file = request.files.get('custom_image_file')
     if custom_image_file and custom_image_file.filename != '' and allowed_file(custom_image_file.filename):
@@ -246,19 +267,23 @@ def add_link_entry():
             image_url_to_save = os.path.join('uploads', unique_filename).replace("\\", "/")
         except Exception as e:
             print(f"Error al guardar imagen: {e}")
-    first_external_url = next((u['value'] for u in urls_data if u['link_type'] == 'external_url'), None)
-    metadata = fetch_metadata(first_external_url) if first_external_url else {}
-    if not image_url_to_save and metadata.get('image_url'):
-        image_url_to_save = metadata['image_url']
-    title_to_save = title_from_form or metadata.get('title', urls_data[0]['label'])
-    description_to_save = description_from_form or metadata.get('description', '')
+    
+    # Si no hay imagen, intentamos obtenerla de metadatos (solo si hay URL externa)
+    if not image_url_to_save:
+        first_external_url = next((u['value'] for u in urls_data if u['link_type'] == 'external_url'), None)
+        if first_external_url:
+            metadata = fetch_metadata(first_external_url)
+            image_url_to_save = metadata.get('image_url')
+
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("INSERT INTO link_entries (title, description, image_url, section_id) VALUES (?, ?, ?, ?)", (title_to_save, description_to_save, image_url_to_save, section_id))
+        cur.execute("INSERT INTO link_entries (title, description, image_url, section_id) VALUES (?, ?, ?, ?)",
+                    (title_from_form, description_from_form, image_url_to_save, section_id))
         link_entry_id = cur.lastrowid
         for url_item in urls_data:
-            cur.execute("INSERT INTO entry_urls (link_entry_id, label, link_type, value) VALUES (?, ?, ?, ?)", (link_entry_id, url_item['label'], url_item['link_type'], url_item['value']))
+            cur.execute("INSERT INTO entry_urls (link_entry_id, label, link_type, value) VALUES (?, ?, ?, ?)",
+                        (link_entry_id, url_item['label'], url_item['link_type'], url_item['value']))
         db.commit()
         flash("Nueva entrada añadida.", "success")
     except sqlite3.Error as e:
@@ -268,6 +293,14 @@ def add_link_entry():
 
 @app.route('/edit_link_entry/<int:entry_id>', methods=['POST'])
 def edit_link_entry(entry_id):
+    title = request.form.get('link_title', '').strip()
+    
+    # --- VALIDACIÓN DE TÍTULO OBLIGATORIO ---
+    if not title:
+        flash("El título no puede estar vacío.", "error")
+        # Aquí sería ideal recargar el modal, pero por simplicidad redirigimos
+        return redirect(url_for('index'))
+
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT image_url FROM link_entries WHERE id = ?", (entry_id,))
@@ -277,7 +310,6 @@ def edit_link_entry(entry_id):
         return redirect(url_for('index'))
     current_image_url = current_entry['image_url']
 
-    title = request.form.get('link_title', '').strip()
     description = request.form.get('link_description', '').strip()
     section_id = request.form.get('section_id')
     delete_image = request.form.get('delete_current_image') == 'on'
@@ -316,7 +348,8 @@ def edit_link_entry(entry_id):
         label = request.form.get(f'urls[{i}][label]', '').strip()
         link_type = request.form.get(f'urls[{i}][type]')
         value = request.form.get(f'urls[{i}][value]', '').strip()
-        if label and value:
+        # Solo se requiere que el valor exista, no la etiqueta
+        if value:
             submitted_urls.append({'id': url_id, 'label': label, 'link_type': link_type, 'value': value})
         i += 1
 
@@ -380,17 +413,13 @@ def get_entry_details(entry_id):
     
     entry_dict = dict(entry)
     
-    # Obtener URLs asociadas
     urls_cur = db.cursor()
     urls_cur.execute("SELECT * FROM entry_urls WHERE link_entry_id = ? ORDER BY id", (entry_id,))
     entry_dict['urls'] = [dict(url_row) for url_row in urls_cur.fetchall()]
 
-    # --- MODIFICACIÓN ---
-    # Añadir la lista de todas las secciones a la respuesta
     all_sections_cur = db.cursor()
     all_sections_cur.execute("SELECT id, name FROM sections ORDER BY order_index, name")
     entry_dict['all_sections'] = [dict(row) for row in all_sections_cur.fetchall()]
-    # --- FIN MODIFICACIÓN ---
 
     return jsonify(entry_dict)
 
