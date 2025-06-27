@@ -1,252 +1,143 @@
-/* --- Reset Básico y Variables CSS (Opcional pero útil) --- */
+/* --- Variables de Color y Diseño --- */
 :root {
-    --primary-bg: #1a1a1b;
-    --secondary-bg: #272729;
-    --card-bg: #1e1e1f;
-    --text-primary: #d7dadc;
-    --text-secondary: #b0b3b8;
-    --text-muted: #818384;
-    --accent-color: #0079d3;
-    --accent-hover: #005fa3;
-    --danger-color: #d9534f;
-    --danger-hover: #c9302c;
-    --border-color: #3a3a3c;
-    --border-light: #4a4a4e;
-    --border-dashed: #444;
-    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --bg-dark: #202124;
+  --bg-medium: #303134;
+  --bg-light: #3c4043;
+  --border-color: #5f6368;
+  --primary-blue: #8ab4f8;
+  --text-primary: #e8eaed;
+  --text-secondary: #bdc1c6;
+  --danger-red: #f28b82;
+  --border-radius: 8px;
 }
 
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
+/* ... (resto de estilos globales, cabecera, botones, etc. SIN CAMBIOS) ... */
+body { background-color: var(--bg-dark); color: var(--text-secondary); font-family: 'Roboto', sans-serif; margin: 0; }
+h1, h2, h3, h4, h5, h6 { color: var(--text-primary); font-weight: 500; }
+a { color: var(--primary-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.main-container { max-width: 1400px; margin: 0 auto; padding: 0 2rem; }
+.main-header { padding: 1.5rem 0; display: flex; justify-content: space-between; align-items: center; }
+.logo-container { display: flex; align-items: center; gap: 10px; font-size: 1.5rem; color: var(--text-primary); font-weight: 500; }
+.logo { height: 32px; }
+.header-actions { display: flex; align-items: center; gap: 1rem; }
+.btn { border: none; border-radius: var(--border-radius); padding: 10px 20px; font-weight: 500; cursor: pointer; transition: background-color 0.2s; }
+.btn-primary { background-color: var(--primary-blue); color: var(--bg-dark); }
+.btn-primary:hover { background-color: #a7c8fa; color: var(--bg-dark); }
+.btn-secondary { background-color: var(--bg-light); color: var(--text-primary); }
+.btn-secondary:hover { background-color: #4a4e52; }
+.btn-danger { background-color: transparent; border: 1px solid var(--border-color); color: var(--danger-red); }
+.btn-danger:hover { background-color: rgba(242, 139, 130, 0.1); border-color: var(--danger-red); }
+.btn-header { background: none; border: none; color: var(--text-secondary); font-size: 1.2rem; padding: 5px; cursor: pointer; }
+.btn-header:hover { color: var(--text-primary); }
+.content-area { padding-bottom: 5rem; }
+.section-block { background-color: var(--bg-medium); border-radius: var(--border-radius); padding: 1.5rem; margin-bottom: 2rem; }
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--bg-light); padding-bottom: 1rem; }
+.section-header h2 { margin: 0; font-size: 1.8rem; }
+.section-actions { display: flex; gap: 1rem; }
+.link-entries-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
+.link-entry-card { background-color: var(--bg-dark); border-radius: var(--border-radius); overflow: hidden; display: flex; flex-direction: column; }
+.card-image-container { height: 180px; background-color: var(--bg-medium); }
+.card-image-container img { width: 100%; height: 100%; object-fit: cover; }
+.card-content { padding: 1rem; flex-grow: 1; }
+.card-header-actions { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
+.card-title { margin: 0; font-size: 1.2rem; }
+.card-actions { display: flex; gap: 0.5rem; }
+.btn-card-action { background: none; border: none; color: var(--text-secondary); cursor: pointer; }
+.btn-card-action:hover { color: var(--text-primary); }
+.card-description { margin: 0 0 1rem 0; font-size: 0.9rem; line-height: 1.5; }
+.links-title { color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; margin-bottom: 0.5rem; }
+.link-item { display: flex; gap: 0.5rem; font-size: 0.9rem; }
+.link-label { color: var(--text-secondary); }
+.environment-selector-container { position: fixed; bottom: 20px; right: 20px; z-index: 1000; }
+.environment-selector-container select { background-color: var(--bg-medium); color: var(--text-primary); border: 1px solid var(--border-color); }
+.modal-content { background-color: var(--bg-medium); color: var(--text-primary); border: none; border-radius: var(--border-radius); }
+.modal-header, .modal-footer { border-color: var(--bg-light); }
+.close { color: var(--text-primary); text-shadow: none; }
+.form-control { background-color: var(--bg-dark); color: var(--text-primary); border: 1px solid var(--border-color); }
+.form-control:focus { background-color: var(--bg-dark); color: var(--text-primary); border-color: var(--primary-blue); box-shadow: none; }
+.empty-state { text-align: center; padding: 4rem 2rem; background-color: var(--bg-medium); border-radius: var(--border-radius); }
+.flash-messages-container { position: fixed; top: 1rem; right: 1rem; width: 350px; z-index: 1060; }
+
+
+/* Esto oculta SOLO lo que debe */
+.section-actions.admin-action,
+.card-actions.admin-action {
+  display: none !important;
 }
 
-body {
-    font-family: var(--font-sans);
-    background-color: var(--primary-bg);
-    color: var(--text-primary);
-    line-height: 1.6;
-    font-size: 15px; /* Base para móvil */
+body.edit-mode .admin-action {
+  display: flex !important; /* Usamos flex para los contenedores de botones */
 }
 
-/* --- Header --- */
-.site-header {
-    background: var(--secondary-bg);
-    padding: 0.8rem 1rem;
-    border-bottom: 1px solid var(--border-color);
-}
-.header-content {
-    display: flex;
-    align-items: center;
-    justify-content: center; /* Centrar logo y título */
-    margin-bottom: 0.8rem;
-}
-.header-logo {
-    height: 30px;
-    width: auto;
-    margin-right: 8px;
-    border-radius: 5px;
-}
-.site-title {
-    font-size: 1.4em;
-    color: #fff;
-}
-.actions-bar {
-    display: flex;
-    flex-direction: column; /* Apilar botones en móvil */
-    gap: 0.6rem;
-}
-.action-btn {
-    background-color: var(--accent-color);
-    color: white;
-    padding: 0.7rem 1rem;
-    border: none;
-    border-radius: 20px;
-    cursor: pointer;
-    font-size: 0.9em;
-    transition: background-color 0.2s ease;
-    display: flex; /* Para alinear icono y texto */
-    align-items: center;
-    justify-content: center; /* Centrar contenido del botón */
-    gap: 0.5rem;
-    text-decoration: none; /* Para si se usan como enlaces */
-    width: 100%; /* Ocupar ancho en móvil */
-}
-.action-btn:hover { background-color: var(--accent-hover); }
-.action-btn i { font-size: 1em; }
-.action-btn .btn-text { display: inline; } /* Mostrar texto por defecto */
-
-/* --- Botones de Acción Pequeños (Editar/Eliminar en tarjetas/secciones) --- */
-.action-btn-sm {
-    background-color: transparent;
-    color: var(--text-secondary);
-    padding: 0.3rem 0.6rem;
-    border: 1px solid var(--border-light);
-    border-radius: 15px;
-    cursor: pointer;
-    font-size: 0.8em;
-    transition: background-color 0.2s, color 0.2s;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    margin-left: 0.3rem;
-}
-.action-btn-sm:hover { background-color: var(--border-light); color: var(--text-primary); }
-.action-btn-sm.danger { border-color: var(--danger-color); color: var(--danger-color); }
-.action-btn-sm.danger:hover { background-color: var(--danger-color); color: #fff; }
-.action-btn-sm i { font-size: 0.9em; }
-.action-btn-sm .btn-text-sm { display: none; } /* Ocultar texto en botones pequeños por defecto en móvil */
-
-/* --- Contenido Principal y Secciones --- */
-.main-content { padding: 1rem; }
-.empty-state { text-align: center; font-size: 1em; color: var(--text-muted); padding: 2rem 1rem; }
-.links-section { margin-bottom: 1.5rem; background: var(--secondary-bg); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color); }
-.links-section header.section-header { /* Asegurar especificidad */
-    display: flex;
-    flex-direction: column; /* Título arriba, acciones abajo en móvil */
-    align-items: flex-start;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-light);
-}
-.section-title {
-    color: var(--text-primary);
-    font-size: 1.2em;
-    width: 100%;
-}
-.section-actions { display: flex; gap: 0.5rem; }
-.no-entries-message { color: var(--text-muted); font-style: italic; }
-
-/* --- Tarjetas de Enlace --- */
-.links-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; } /* Una columna por defecto */
-.link-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 3px rgba(0,0,0,0.3); position: relative; }
-.link-card-actions-top { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; background-color: rgba(30, 30, 31, 0.6); padding: 4px; border-radius: 12px; z-index: 10;}
-.link-card-actions-top .action-btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75em;} /* Aún más pequeños */
-.link-card-actions-top .action-btn-sm i { font-size: 0.85em; }
-
-.link-image-figure { margin: 0; width: 100%; height: 150px; background-color: #333; border-bottom: 1px solid var(--border-color); }
-.link-image { width: 100%; height: 100%; object-fit: cover; }
-.link-image-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-style: italic; }
-.link-card.no-image .link-image-figure { display: flex; align-items: center; justify-content: center; } /* Centrar placeholder si no hay imagen */
-.link-card.no-image .link-image { display: none; }
-
-
-.link-content { padding: 0.8rem; flex-grow: 1; display: flex; flex-direction: column; }
-.link-title { margin-top: 0; margin-bottom: 0.5rem; font-size: 1.05em; color: #e8e8e8; word-break: break-word; }
-.link-description { font-size: 0.85em; color: var(--text-secondary); margin-bottom: 0.8rem; flex-grow: 1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.entry-url-list { margin-top: auto; font-size: 0.8em; }
-.entry-url-list strong { color: var(--text-secondary); display: block; margin-bottom: 0.3rem; }
-.entry-url-list ul { list-style: none; }
-.entry-url-list li { margin-bottom: 0.3rem; padding: 0.2rem 0; border-bottom: 1px dashed var(--border-dashed); display: flex; align-items: baseline; gap: 0.3rem; }
-.entry-url-list li:last-child { border-bottom: none; }
-.entry-url-list .url-label { font-weight: bold; color: var(--text-muted); white-space: nowrap; }
-.entry-url-list a { color: var(--accent-color); text-decoration: none; word-break: break-all; }
-.entry-url-list a:hover { text-decoration: underline; color: var(--accent-hover); }
-
-/* --- Estilos para Modales --- */
-.modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow-y: auto; background-color: rgba(0,0,0,0.8); padding: 1rem; }
-.modal-content { background-color: var(--secondary-bg); margin: 5% auto; padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; width: 100%; max-width: 500px; position: relative; box-shadow: 0 3px 10px rgba(0,0,0,0.5); }
-.modal-content h2 { margin-top: 0; color: var(--text-primary); border-bottom: 1px solid var(--border-light); padding-bottom: 0.6rem; margin-bottom: 1rem; font-size: 1.2em; }
-.close-btn { color: #aaa; position: absolute; top: 0.5rem; right: 0.8rem; font-size: 1.8em; font-weight: bold; cursor: pointer; }
-.close-btn:hover, .close-btn:focus { color: #fff; text-decoration: none; }
-.modal-content label { display: block; margin-bottom: 0.3rem; font-weight: 500; color: var(--text-secondary); font-size: 0.85em; }
-.modal-content input[type="text"], .modal-content input[type="url"], .modal-content select, .modal-content textarea { width: 100%; padding: 0.6rem; margin-bottom: 0.8rem; border: 1px solid var(--border-light); border-radius: 4px; background-color: var(--primary-bg); color: var(--text-primary); font-family: inherit; font-size: 0.95em; line-height: 1.4; }
-.modal-content textarea { resize: vertical; min-height: 60px; }
-.modal-content input[type="text"]::placeholder, .modal-content input[type="url"]::placeholder, .modal-content textarea::placeholder { color: var(--text-muted); }
-.modal-content select { appearance: none; background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23d7dadc%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 0.7rem center; background-size: 0.6rem 0.6rem; padding-right: 2rem; }
-.modal-content input[type="checkbox"] { width: auto; margin-right: 0.3rem; vertical-align: middle;}
-.modal-content .image-options label { display: inline; font-weight: normal; font-size: 0.8em; }
-
-.primary-submit-btn { background: var(--accent-color); color: white; padding: 0.7rem 1rem; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 1em; margin-top: 1rem; transition: background-color 0.2s ease;}
-.primary-submit-btn:hover { background: var(--accent-hover); }
-.modal-content .secondary-btn { background-color: #4a4a4e; color: #ddd; padding: 0.5rem 0.8rem; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 0.85em; margin-top: 0.5rem; display: inline-flex; align-items: center; gap: 0.4rem; transition: background-color 0.2s ease;}
-.modal-content .secondary-btn:hover { background-color: #5a5a5e; }
-.modal-content .secondary-btn.danger-btn { border-color: var(--danger-color); color: var(--danger-color); background-color: transparent;}
-.modal-content .secondary-btn.danger-btn:hover { background-color: var(--danger-color); color: #fff; }
-.modal-content .secondary-btn.sm-btn { padding: 0.3rem 0.5rem; font-size: 0.75em;}
-.modal-content .add-url-btn { width: 100%; justify-content: center; margin-bottom: 0.5rem;}
-
-.url-field-group { margin-bottom: 0.8rem; padding: 0.8rem; border: 1px dashed var(--border-dashed); border-radius: 4px; background-color: #222224; }
-.url-field-group label.url-field-dynamic-label { font-size: 0.8em; color: #aaa;}
-.url-field-group input[type="url"], .url-field-group input[type="text"] { margin-bottom: 0.5rem; }
-.url-field-group .removeUrlFieldBtn, .url-field-group .removeEditUrlFieldBtn { width: 100%; justify-content: center; }
-
-.form-divider { border: 0; height: 1px; background: var(--border-light); margin: 1.2rem 0; }
-.form-divider-light { border: 0; height: 1px; background: var(--border-dashed); margin: 0.8rem 0; }
-
-/* --- Previsualización de Imágenes en Modales --- */
-.image-preview-container { border: 2px dashed #555; padding: 0.8rem; margin-bottom: 1rem; border-radius: 4px; min-height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: var(--card-bg); position: relative; text-align: center;}
-.image-preview-container img { max-width: 100%; max-height: 120px; object-fit: contain; border-radius: 4px; margin-bottom: 0.5rem; }
-.paste-helper-text { color: var(--text-muted); font-size: 0.85em; }
-.image-options { margin-top: 0.5rem; font-size: 0.85em; }
-
-/* Previsualización de metadatos de URL (dentro de modal) */
-.link-card-preview { border: 1px solid var(--border-color); padding: 0.6rem; margin-bottom: 1rem; border-radius: 4px; display: flex; align-items: center; gap: 0.6rem; background-color: var(--card-bg); }
-.link-card-preview img { max-width: 50px; max-height: 50px; object-fit: cover; border-radius: 4px; border: 1px solid #333; }
-.link-card-preview h4 { margin: 0 0 0.2rem 0; font-size: 0.85em; color: var(--text-primary); }
-.link-card-preview p { margin: 0; font-size: 0.75em; color: var(--text-secondary); max-height: 40px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;}
-
-/* --- Mensajes Flash --- */
-.flash-messages { margin-bottom: 1rem; padding: 0; list-style: none; }
-.flash { padding: 0.8rem 1rem; margin-bottom: 0.6rem; border-radius: 4px; border: 1px solid transparent; font-size: 0.9em; }
-.flash-success { color: #3c763d; background-color: #dff0d8; border-color: #d6e9c6; }
-.flash-error { color: #a94442; background-color: #f2dede; border-color: #ebccd1; }
-.flash-warning { color: #8a6d3b; background-color: #fcf8e3; border-color: #faebcc; }
-.flash-info { color: #31708f; background-color: #d9edf7; border-color: #bce8f1; }
-
-
-/* --- MEDIA QUERIES para pantallas más grandes --- */
-
-/* Tablets pequeñas y móviles en horizontal (~576px+) */
-@media (min-width: 576px) {
-    body { font-size: 16px; }
-    .site-header { padding: 1rem 1.5rem; }
-    .header-logo { height: 35px; }
-    .site-title { font-size: 1.6em; }
-    .actions-bar { flex-direction: row; justify-content: center; } /* Botones en línea */
-    .action-btn { width: auto; padding: 0.7rem 1.2rem; }
-    .action-btn .btn-text { display: inline; } /* Asegurar que se vea el texto */
-    .action-btn-sm .btn-text-sm { display: inline; } /* Mostrar texto en botones pequeños */
-
-    .main-content { padding: 1.5rem; }
-    .links-section { padding: 1.5rem; }
-    .links-section header.section-header { flex-direction: row; align-items: center; }
-    .section-title { font-size: 1.4em; }
-
-    .links-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); } /* 2+ columnas */
-    .link-image-figure, .link-image-placeholder { height: 160px; }
-    .link-description { -webkit-line-clamp: 3; }
-    .entry-url-list a { /* No es necesario truncar tanto */ }
-
-
-    .modal-content { padding: 1.5rem; max-width: 550px; }
-    .modal-content h2 { font-size: 1.4em; }
+.edit-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-/* Tablets y escritorios pequeños (~768px+) */
-@media (min-width: 768px) {
-    .header-logo { height: 40px; }
-    .site-title { font-size: 1.8em; }
-    .action-btn { font-size: 1em; }
-
-    .links-section header.section-header { padding-bottom: 0.8rem; }
-    .section-title { font-size: 1.6em; }
-    .links-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
-    .link-image-figure, .link-image-placeholder { height: 180px; }
-
-    .modal-content { max-width: 600px; padding: 1.8rem; }
-    .modal-content h2 { font-size: 1.5em; }
-    .primary-submit-btn, .modal-content .secondary-btn { font-size: 1em; }
+.edit-mode-toggle .slider-label {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
 }
 
-/* Escritorios medianos (~992px+) */
-@media (min-width: 992px) {
-    .links-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); } /* Podría ser 3 columnas */
+.edit-mode-toggle input[type="checkbox"] {
+  position: relative;
+  width: 40px;
+  height: 20px;
+  -webkit-appearance: none;
+  background: var(--bg-light);
+  outline: none;
+  border-radius: 20px;
+  box-shadow: inset 0 0 5px rgba(0,0,0,.2);
+  transition: .5s;
+  cursor: pointer;
 }
 
-/* Escritorios grandes (~1200px+) */
-@media (min-width: 1200px) {
-    /* Podrías tener ajustes para pantallas muy anchas si es necesario */
+.edit-mode-toggle input:checked[type="checkbox"] {
+  background: var(--primary-blue);
+}
+
+.edit-mode-toggle input[type="checkbox"]::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0,0,0,.2);
+  transition: .5s;
+}
+
+.edit-mode-toggle input:checked[type="checkbox"]::before {
+  left: 22px;
+}
+
+/* --- Estilos Responsivos para Móviles --- */
+@media (max-width: 768px) {
+    
+    /* Reduce el espaciado en la cabecera */
+    .main-header {
+        gap: 0.5rem;
+    }
+
+    /* Oculta el texto de los botones y la etiqueta del toggle */
+    .btn-text-desktop,
+    .edit-mode-toggle .slider-label {
+        display: none;
+    }
+
+    /* Ajusta el padding de los botones para que se vean bien solo con el icono */
+    .header-actions .btn {
+        padding: 10px 12px;
+    }
+
+    /* Ajusta el espaciado general del contenedor principal en móviles */
+    .main-container {
+        padding: 0 1rem;
+    }
 }
