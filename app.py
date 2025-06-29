@@ -12,7 +12,7 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
-DATABASE = 'database.db'
+DATABASE = os.path.join("database", "database.db")
 
 # Configuración de la carpeta de subidas
 UPLOAD_FOLDER = os.path.join(app.static_folder, 'uploads')

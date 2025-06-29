@@ -25,4 +25,6 @@ EXPOSE 5000
 # Comando para ejecutar la aplicación cuando el contenedor inicie
 # Usaremos Gunicorn como servidor WSGI de producción en lugar del servidor de desarrollo de Flask
 # CMD ["flask", "run", "--host=0.0.0.0"] # Para desarrollo
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
