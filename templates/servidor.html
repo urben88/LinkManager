@@ -1,0 +1,174 @@
+{% from "_macros.html" import icono %}
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Servidor — LinkManager</title>
+  <link rel="icon" href="{{ url_for('static', filename='images/icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<header class="cabecera">
+  <div class="cabecera-fila">
+    <a class="marca" href="{{ url_for('index') }}">
+      <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager">
+    </a>
+
+    <div class="cabecera-buscador">
+      {{ icono('buscar', 15) }}
+      <label class="oculto-visualmente" for="f">Filtrar servicios</label>
+      <input id="f" type="search" autocomplete="off"
+             placeholder="Filtrar por servicio, contenedor, puerto o dominio…">
+      <span class="contador" id="contador"></span>
+    </div>
+
+    <div class="cabecera-acciones">
+      <a class="boton" href="{{ url_for('index') }}">{{ icono('chevron', 15) }}<span class="texto-boton">Volver a los enlaces</span></a>
+    </div>
+  </div>
+</header>
+
+<main class="contenido">
+  {% if datos and datos.servicios %}
+    <div class="resumen">
+      <span class="resumen-dato"><strong>{{ datos.servicios | length }}</strong> servicios</span>
+      <span class="resumen-dato"><strong>{{ datos.con_subdominio | default(0) }}</strong> con subdominio</span>
+      <span class="resumen-dato"><strong>{{ datos.en_marcha }}</strong> en marcha</span>
+      <span class="resumen-dato"><strong>{{ datos.total_contenedores }}</strong> contenedores</span>
+      <button type="button" class="resumen-plegar" id="plegar-todo">{{ icono('lista', 14) }} <span>Plegar todo</span></button>
+    </div>
+
+    <div class="herramientas">
+      <a class="boton" href="{{ dockge }}" target="_blank" rel="noopener">{{ icono('capas', 15) }} Dockge</a>
+      <a class="boton" href="{{ meilisearch }}" target="_blank" rel="noopener">{{ icono('buscar', 15) }} Meilisearch</a>
+      <a class="boton" href="{{ recoll }}" target="_blank" rel="noopener">{{ icono('documento', 15) }} Recoll</a>
+      <a class="boton" href="{{ wiki }}" target="_blank" rel="noopener">{{ icono('etiqueta', 15) }} Wiki</a>
+    </div>
+
+    {% for grupo in datos.grupos %}
+    <section class="seccion" data-plegada="0">
+      <div class="seccion-cabecera">
+        <button class="seccion-plegar" aria-label="Plegar o desplegar">{{ icono('chevron', 16) }}</button>
+        <h2 class="seccion-titulo">
+          {{ grupo.nombre }}
+          <span class="seccion-cuenta">{{ grupo.servicios | length }}</span>
+        </h2>
+      </div>
+
+      <div class="tabla-envoltorio">
+        <table class="tabla">
+          <thead>
+            <tr><th>Servicio</th><th>Estado</th><th>Subdominio</th><th>En la red local</th></tr>
+          </thead>
+          <tbody>
+          {% for s in grupo.servicios %}
+            <tr data-buscar="{{ (s.contenedor ~ ' ' ~ grupo.nombre ~ ' ' ~ (s.lan | join(' ')) ~ ' ' ~ (s.publico | join(' ')) ~ ' ' ~ (s.subdominio or '')) | lower }}">
+              <td class="mono">{{ s.contenedor }}</td>
+              <td class="{{ 'ok' if s.estado == 'en marcha' else 'mal' }}">{{ s.estado }}</td>
+              <td>
+                {% if s.subdominio and s.dominios %}
+                  {% set d0 = s.dominios[0] %}
+                  {% set esquema = 'http' if d0.host.endswith('.home') or d0.host.endswith('.local') else 'https' %}
+                  <a class="enlace-simple mono" href="{{ esquema }}://{{ d0.host }}{{ d0.ruta }}"
+                     target="_blank" rel="noopener">{{ d0.host }}{% if d0.ruta %}{{ d0.ruta }}{% endif %}</a>
+                  <span class="insignia {{ 'coolify' if d0.origen == 'coolify' else 'npm' }}">{{ 'Coolify' if d0.origen == 'coolify' else 'Proxy Manager' }}</span>
+                {% else %}
+                  <span class="tenue">&mdash;</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if s.lan %}
+                  {% for u in s.lan %}<a class="enlace-simple mono" href="{{ u }}" target="_blank" rel="noopener">{{ u }}</a>{% endfor %}
+                {% else %}<span class="tenue">&mdash;</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endfor %}
+
+    <div class="vacio" id="sin" hidden>
+      <h3>Ningún servicio coincide</h3>
+      <p>Prueba con otra palabra o borra el filtro.</p>
+    </div>
+
+    <p class="pie">
+      Catálogo generado por <code>~/docker/tools/generar-catalogo.py</code>, que lo cruza con
+      Nginx Proxy Manager y Coolify. Se regenera solo cada 10 minutos.
+      {% if datos.generado %}Última actualización: {{ datos.generado }}.{% endif %}
+      Solo se ve con sesión iniciada, porque expone puertos y rutas internas.
+    </p>
+  {% else %}
+    <div class="vacio">
+      <h3>Todavía no hay catálogo</h3>
+      <p>Genéralo con <code>python3 ~/docker/tools/generar-catalogo.py</code>.</p>
+      {% if datos and datos.error %}<p class="tenue">{{ datos.error }}</p>{% endif %}
+    </div>
+  {% endif %}
+</main>
+
+<script>
+  (function () {
+    const f = document.getElementById('f');
+    const filas = Array.from(document.querySelectorAll('tbody tr'));
+    const secciones = Array.from(document.querySelectorAll('.seccion'));
+    const sin = document.getElementById('sin');
+    const contador = document.getElementById('contador');
+    const btnTodo = document.getElementById('plegar-todo');
+    if (!f) return;
+
+    function filtrar() {
+      const q = f.value.trim().toLowerCase();
+      let visibles = 0;
+      filas.forEach((tr) => {
+        const coincide = !q || (tr.dataset.buscar || '').includes(q);
+        tr.hidden = !coincide;
+        if (coincide) visibles++;
+      });
+      secciones.forEach((s) => {
+        const hay = s.querySelectorAll('tbody tr:not([hidden])').length > 0;
+        s.hidden = !hay;
+        if (q && hay) s.dataset.plegada = '0';
+      });
+      if (contador) contador.textContent = q ? `${visibles} de ${filas.length}` : '';
+      if (sin) sin.hidden = !(q && visibles === 0);
+    }
+
+    f.addEventListener('input', filtrar);
+
+    document.querySelectorAll('.seccion-plegar').forEach((b) => {
+      b.addEventListener('click', () => {
+        const s = b.closest('.seccion');
+        s.dataset.plegada = s.dataset.plegada === '1' ? '0' : '1';
+      });
+    });
+
+    if (btnTodo) {
+      const rotular = () => {
+        const hay = secciones.some((s) => s.dataset.plegada !== '1');
+        btnTodo.querySelector('span').textContent = hay ? 'Plegar todo' : 'Desplegar todo';
+      };
+      rotular();
+      btnTodo.addEventListener('click', () => {
+        const hay = secciones.some((s) => s.dataset.plegada !== '1');
+        secciones.forEach((s) => { s.dataset.plegada = hay ? '1' : '0'; });
+        rotular();
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      const escribiendo = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+      if (e.key === '/' && !escribiendo) { e.preventDefault(); f.focus(); }
+    });
+
+    filtrar();
+  })();
+</script>
+</body>
+</html>

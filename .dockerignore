@@ -1,0 +1,9 @@
+# Herramientas de diseño: no van dentro de la imagen de producción
+ai-frontend-guide-kit/
+ai-frontend-output/
+node_modules/
+.git/
+__pycache__/
+*.pyc
+schema.sql
+README.md

@@ -10,6 +10,14 @@ COPY requirements.txt requirements.txt
 # Instalar las dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Chromium headless: lo usa tools/imagenes.py para hacer CAPTURAS de los servicios
+# cuando no hay una imagen de portada de calidad. Es lo que permite no poner nunca
+# una imagen pixelada.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium fonts-liberation \
+ && rm -rf /var/lib/apt/lists/*
+ENV CHROME_BIN=/usr/bin/chromium
+
 # Copiar el resto del código de la aplicación al directorio de trabajo
 COPY . .
 

@@ -1,0 +1,36 @@
+{# Macros compartidos por las plantillas de LinkManager.
+   Se importan con: {% from "_macros.html" import icono, url_imagen %} #}
+
+{% macro icono(nombre, tam=16) -%}
+{%- set trazos = {
+  'buscar':   '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  'lista':    '<path d="M3 6h18M3 12h18M3 18h18"/>',
+  'rejilla':  '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  'lapiz':    '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  'servidor': '<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/>',
+  'ajustes':  '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  'mas':      '<path d="M12 5v14M5 12h14"/>',
+  'salir':    '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  'entrar':   '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>',
+  'chevron':  '<path d="m6 9 6 6 6-6"/>',
+  'papelera': '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
+  'asa':      '<circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/>',
+  'externo':  '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/>',
+  'cerrar':   '<path d="M18 6 6 18M6 6l12 12"/>',
+  'carpeta':  '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+  'documento':'<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/>',
+  'capas':    '<path d="m12 2 9 5-9 5-9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
+  'etiqueta': '<path d="M3 11V4a1 1 0 0 1 1-1h7l9 9-8 8-9-9Z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
+} -%}
+<svg width="{{ tam }}" height="{{ tam }}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ trazos.get(nombre, '') | safe }}</svg>
+{%- endmacro %}
+
+{# Resuelve el valor guardado en la base de datos a una URL que el navegador pueda pedir. #}
+{% macro url_imagen(valor) -%}
+{%- if valor -%}
+{%- if valor.startswith('uploads/') -%}{{ url_for('subida', nombre=valor[8:]) }}
+{%- elif valor.startswith('http') -%}{{ valor }}
+{%- endif -%}
+{%- endif -%}
+{%- endmacro %}

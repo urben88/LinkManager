@@ -1,1 +1,23 @@
-# database.db
+# La base de datos de verdad vive en el volumen de Docker, no aquí.
+database/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secretos: nunca al repositorio
+.env
+.env.*
+ADMIN_PASSWORD.txt
+secret.key
+*.key
+
+# Subidas locales
+static/uploads/
+
+# Herramientas de diseño: no forman parte de la aplicación
+ai-frontend-guide-kit/
+ai-frontend-output/
+
+# Python
+__pycache__/
+*.py[cod]

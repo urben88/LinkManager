@@ -19,12 +19,16 @@ CREATE TABLE sections (
 );
 
 -- Tabla para las entradas individuales (las tarjetas con imagen, título, etc.).
+-- parent_id convierte una entrada en «padre» o grupo: sus hijos se despliegan
+-- desde ella. Va sin restricción de clave foránea a propósito, para que al
+-- borrar un padre los hijos queden sueltos en lugar de desaparecer con él.
 CREATE TABLE link_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     section_id INTEGER NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
     image_url TEXT,
+    parent_id INTEGER,
     order_index INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (section_id) REFERENCES sections (id) ON DELETE CASCADE
