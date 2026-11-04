@@ -128,6 +128,10 @@
 
       {% if logueado %}
       <button class="boton-icono" id="modo-edicion" title="Modo edición" aria-pressed="false">{{ icono('lapiz', 16) }}</button>
+      {% if monitor_disponible %}
+      <button class="boton-icono" id="abrir-monitor" title="Estado del ordenador"
+              aria-controls="monitor" aria-expanded="false">{{ icono('pulso', 16) }}<span class="texto-boton">Monitor</span></button>
+      {% endif %}
       {% if agente_disponible %}
       <button class="boton-icono" id="abrir-agente" data-abrir-agente title="Asistente: pega enlaces y te los coloca"
               aria-controls="agente" aria-expanded="false">{{ icono('chispa', 16) }}<span class="texto-boton">Asistente</span></button>
@@ -382,6 +386,33 @@
 </select>
 {% endif %}
 
+{% if logueado and monitor_disponible %}
+{# ------------------------------------------------------------------- monitor
+   Solo lectura: Glances toma las medidas, esto las pinta con la letra y los
+   colores del portal. Nada de consola ni de botones que toquen el sistema. #}
+<aside class="agente monitor" id="monitor" hidden aria-label="Estado del ordenador">
+  <div class="agente-cabecera">
+    <span class="agente-icono">{{ icono('pulso', 15) }}</span>
+    <div class="agente-titulo">
+      <h2>Monitor</h2>
+      <span class="agente-sub" id="monitor-sub">leyendo…</span>
+    </div>
+    <button class="boton-icono" id="monitor-refrescar" title="Actualizar ahora"
+            aria-label="Actualizar ahora">{{ icono('pulso', 15) }}</button>
+    <button class="boton-icono" id="monitor-cerrar" title="Cerrar"
+            aria-label="Cerrar el monitor">{{ icono('cerrar', 15) }}</button>
+  </div>
+
+  <div class="agente-hilo monitor-hilo" id="monitor-hilo" role="status" aria-live="polite">
+    <p class="monitor-espera">Leyendo el estado del servidor…</p>
+  </div>
+
+  <p class="agente-pie" id="monitor-pie">
+    Medidas de <strong>Glances</strong> · solo lectura · se actualiza cada 2 s
+  </p>
+</aside>
+{% endif %}
+
 {% if logueado and agente_disponible %}
 {# ------------------------------------------------------------------ asistente
    Un cajón que entra desde la derecha. Solo aparece con sesión: escribe en la
@@ -418,9 +449,13 @@
   window.LOGUEADO    = {{ 'true' if logueado else 'false' }};
   window.CSRF        = {{ csrf_token() | tojson | safe }};
   window.AGENTE      = {{ 'true' if (logueado and agente_disponible) else 'false' }};
+  window.MONITOR     = {{ 'true' if (logueado and monitor_disponible) else 'false' }};
 </script>
 <script src="{{ url_for('static', filename='vendor/sortable.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+{% if logueado and monitor_disponible %}
+<script src="{{ url_for('static', filename='js/monitor.js') }}"></script>
+{% endif %}
 {% if logueado and agente_disponible %}
 <script src="{{ url_for('static', filename='js/agente.js') }}"></script>
 {% endif %}

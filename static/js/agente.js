@@ -348,6 +348,14 @@
   /* ----------------------------------------------------------------- panel */
 
   function abrir() {
+    // El cajón es el mismo sitio que el del monitor: si está abierto, se cierra
+    // para no apilar dos paneles a la derecha.
+    const monitorAbierto = document.getElementById('monitor');
+    if (monitorAbierto && !monitorAbierto.hidden) {
+      const cerrarMonitor = document.getElementById('monitor-cerrar');
+      if (cerrarMonitor) cerrarMonitor.click();
+    }
+
     panel.hidden = false;
     document.body.classList.add('agente-abierto');
     if (abrirBtn) abrirBtn.setAttribute('aria-expanded', 'true');

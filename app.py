@@ -44,6 +44,14 @@ except Exception as _exc_agente:  # noqa: BLE001
     agente = None
     print(f"[linkmanager] asistente desactivado: {_exc_agente}")
 
+# El monitor es opcional igual que el asistente: si Glances no está o algo
+# falla al importar, el portal arranca y esconde el botón.
+try:
+    import monitor
+except Exception as _exc_monitor:  # noqa: BLE001
+    monitor = None
+    print(f"[linkmanager] monitor desactivado: {_exc_monitor}")
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
@@ -213,7 +221,7 @@ def _cabeceras(resp):
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
     # El hilo del asistente lleva notas y enlaces privados: ni caché ni índice.
-    if request.path.startswith("/agente"):
+    if request.path.startswith(("/agente", "/monitor")):
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Robots-Tag"] = "noindex, nofollow"
     return resp
@@ -222,7 +230,8 @@ def _cabeceras(resp):
 @app.context_processor
 def _inyectar():
     return {"logueado": logueado(), "csrf_token": csrf_token, "privado": PRIVADO,
-            "agente_disponible": bool(agente is not None and agente.disponible())}
+            "agente_disponible": bool(agente is not None and agente.disponible()),
+            "monitor_disponible": bool(monitor is not None and monitor.activo())}
 
 
 def tono(texto: str) -> int:
@@ -917,6 +926,19 @@ def agente_nueva():
         return _agente_no_disponible()
     session["agente_conv"] = agente.nueva_conversacion(DATABASE)
     return jsonify({"ok": True, "conversacion": session["agente_conv"]})
+
+
+# --------------------------------------------------------------------------
+#  Monitor: solo lectura, solo con sesión, sin tocar nada del sistema
+# --------------------------------------------------------------------------
+
+@app.route("/monitor/datos")
+@login_required
+def monitor_datos():
+    if monitor is None or not monitor.activo():
+        return jsonify({"disponible": False,
+                        "motivo": "El monitor está desactivado en este portal."}), 503
+    return jsonify(monitor.datos())
 
 
 # --------------------------------------------------------------------------

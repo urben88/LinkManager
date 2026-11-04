@@ -50,6 +50,10 @@ y ejecuta `docker compose up -d --force-recreate` desde
 | `AGENTE_LIMITE_HORA` | `120` | Consultas por hora en todo el portal |
 | `AGENTE_TIMEOUT` | `60` | Segundos máximos por llamada al modelo |
 | `AGENTE_TIMEOUT_WEB` | `12` | Segundos máximos para leer una página ajena |
+| `MONITOR_ACTIVO` | `1` | `0` = sin panel de estado: ni botón ni ruta `/monitor/datos` |
+| `MONITOR_URL` | `http://glances:61208` | Dónde escucha Glances (misma red docker) |
+| `MONITOR_EQUIPO` | `urbenserver` | Nombre que se muestra en el panel |
+| `MONITOR_TIMEOUT` | `2.5` | Segundos máximos esperando a Glances |
 
 ## Modelo de datos
 
@@ -177,6 +181,36 @@ Detalles que importan:
   cuando se añade a mano; si no hay, la tarjeta usa el monograma.
 - Sin `AGENTE_API_KEY` (o con `AGENTE_ACTIVO=0`) el botón no aparece y las rutas
   `/agente/*` responden 503. El portal funciona exactamente igual que antes.
+
+## El monitor del servidor
+
+Con sesión iniciada, el botón **Monitor** de la cabecera abre un cajón con el
+estado del ordenador: CPU total y por núcleo, carga media, temperatura, memoria
+y swap, GPU (uso y temperatura), disco y tiempo encendido. Arriba, un semáforo
+con el peor indicador; abajo, la gráfica de CPU y memoria de los dos últimos
+minutos.
+
+De dónde sale cada cifra:
+
+| Dato | Quién lo mide |
+|---|---|
+| CPU, memoria, swap, carga, temperaturas, GPU (nombre y °C), uptime | **Glances** (stack `infra/glances`, API v4) |
+| % de uso de la GPU | `/sys/class/drm/card0/device/gpu_busy_percent` (en las Radeon integradas Glances no lo da) |
+| Disco | `statvfs` del volumen `/app/database`, que es el disco real del servidor |
+
+El navegador **nunca habla con Glances**: pide `/monitor/datos` al portal, que es
+quien consulta la API por dentro de la red docker y cachea 2 segundos. Glances no
+publica ningún puerto, así que no hay una segunda puerta al servidor.
+
+- **Solo con sesión**: `/monitor/datos` redirige a `/login` sin sesión, y las
+  respuestas van con `Cache-Control: no-store`.
+- **Solo lectura**: no hay órdenes, ni consola, ni socket de Docker. El monitor
+  mira; no toca.
+- **Si Glances se cae**, el panel dice «No se pudo hablar con Glances» y el resto
+  del portal sigue igual. Los umbrales del semáforo están en `monitor.py`
+  (`UMBRALES`).
+- La gráfica se alimenta de las muestras de la pestaña abierta (60 × 2,5 s); al
+  cerrar el cajón o pasar la pestaña a segundo plano, deja de pedir.
 
 ## Imágenes
 
