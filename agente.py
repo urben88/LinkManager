@@ -62,8 +62,9 @@ from pydantic import BaseModel, Field
 MAX_TEXTO_ENLACE = 4000          # caracteres de texto útil por enlace
 MAX_ENLACES_POR_LLAMADA = 6      # el modelo puede pedir varios de golpe
 MAX_PASOS = 8                    # vueltas de herramientas por mensaje
+MAX_INTENTOS_PLAN = 3            # validaciones de la propuesta antes de rendirse
 MAX_HISTORIAL = 20               # mensajes que se le pasan al modelo
-MAX_MENSAJE = 4000               # longitud máxima de un mensaje del usuario
+MAX_MENSAJE = 8000               # longitud máxima de un mensaje del usuario
 MAX_ENTRADAS_PLAN = 40
 MAX_SECCIONES_PLAN = 12
 MAX_URLS_ENTRADA = 8
@@ -429,7 +430,7 @@ def _herramientas(entorno: Entorno, caja: dict) -> list:
             for f in filas)
 
     @tool
-    def proponer_plan(resumen: str, secciones_nuevas: list[str] = [],
+    def proponer_plan(resumen: str = "", secciones_nuevas: list[str] = [],
                       entradas: list[EntradaPropuesta] = [],
                       movimientos: list[Movimiento] = []) -> str:
         """Guarda una PROPUESTA que el usuario aprobará con un botón. No escribe
@@ -441,7 +442,21 @@ def _herramientas(entorno: Entorno, caja: dict) -> list:
         lista de {"valor": "...", "etiqueta": "...", "tipo": "external_url" |
         "internal_app" | "subdomain"}.
         Cada movimiento es {"entrada": "título o id", "seccion_destino": "nombre"}.
-        No existe la opción de borrar: no la ofrezcas."""
+        No existe la opción de borrar: no la ofrezcas.
+
+        La propuesta se VALIDA: si algo no cumple, esta herramienta te devuelve
+        los errores y puedes corregirla y volver a llamarla, pero solo hay unos
+        pocos intentos. Cuando se agoten, no hay propuesta."""
+        maximo = intentos_max()
+        intentos = int(caja.get("intentos", 0))
+        if intentos >= maximo:
+            caja["fallido"] = "sin-intentos"
+            return ("No quedan intentos de validación. No vuelvas a llamar a esta herramienta: "
+                    "dile al usuario que no has podido generar una propuesta válida.")
+
+        intentos += 1
+        caja["intentos"] = intentos
+
         try:
             plan = PlanPropuesta(
                 resumen=str(resumen or "")[:600],
@@ -449,12 +464,20 @@ def _herramientas(entorno: Entorno, caja: dict) -> list:
                 entradas=[EntradaPropuesta(**e) if isinstance(e, dict) else e for e in (entradas or [])],
                 movimientos=[Movimiento(**m) if isinstance(m, dict) else m for m in (movimientos or [])])
         except Exception as exc:
-            return (f"La propuesta no es válida ({exc}). Corrige la estructura y vuelve a llamar "
-                    f"a proponer_plan.")
+            caja["ultimos_errores"] = [str(exc)[:200]]
+            return (f"Intento {intentos}/{maximo} fallido: la propuesta no cumple el esquema "
+                    f"({str(exc)[:300]}). Corrige la estructura y vuelve a llamar a proponer_plan.")
 
-        limpio, errores = _validar_plan(entorno.db_path, plan)
-        if errores and not limpio["entradas"] and not limpio["movimientos"]:
-            return "La propuesta no tiene nada aplicable: " + "; ".join(errores[:6])
+        limpio, errores, avisos = _validar_plan(entorno.db_path, plan)
+        if errores:
+            caja["ultimos_errores"] = errores
+            detalle = "; ".join(errores[:6])
+            if intentos >= maximo:
+                caja["fallido"] = "validacion"
+                return (f"Intento {intentos}/{maximo} fallido, y no quedan más: {detalle}. "
+                        f"No se ha guardado ninguna propuesta: avisa al usuario.")
+            return (f"Intento {intentos}/{maximo} fallido. La propuesta NO pasa la validación: "
+                    f"{detalle}. Corrige exactamente eso y vuelve a llamar a proponer_plan.")
 
         propuesta_id = uuid.uuid4().hex[:12]
         db = _conectar(entorno.db_path)
@@ -467,9 +490,11 @@ def _herramientas(entorno: Entorno, caja: dict) -> list:
             db.close()
         caja["propuesta_id"] = propuesta_id
         caja["propuesta"] = limpio
-        avisos = (" Avisos: " + "; ".join(errores[:5])) if errores else ""
-        return (f"Propuesta {propuesta_id} guardada y enviada al usuario para que la apruebe.{avisos} "
-                f"Resume en una línea qué has propuesto y no llames a más herramientas.")
+        caja["avisos"] = avisos
+        avisos_txt = (" Avisos: " + "; ".join(avisos[:5])) if avisos else ""
+        return (f"Propuesta {propuesta_id} válida y guardada, enviada al usuario para que la "
+                f"apruebe.{avisos_txt} Resume en una línea qué has propuesto y no llames a más "
+                f"herramientas.")
 
     return [leer_enlaces, consultar_portal, buscar_en_portal, proponer_plan]
 
@@ -484,15 +509,70 @@ def _normalizar(texto: str) -> str:
     return re.sub(r"\s+", " ", texto)
 
 
-def _validar_plan(db_path: str, plan: PlanPropuesta) -> tuple[dict, list[str]]:
-    """Sanea y recorta el plan. Devuelve (plan_limpio, avisos)."""
+VERSION_PLAN = 1
+
+
+def intentos_max() -> int:
+    """Cuántas veces se le puede pedir al modelo que arregle su propuesta."""
+    try:
+        n = int(os.environ.get("AGENTE_INTENTOS", MAX_INTENTOS_PLAN))
+    except (TypeError, ValueError):
+        n = MAX_INTENTOS_PLAN
+    return max(1, min(n, 6))
+
+
+def _problema_url(tipo: str, valor: str) -> str:
+    """Motivo por el que un enlace no vale. Cadena vacía = vale."""
+    if tipo == "internal_app":
+        if not valor.isdigit() or not 1 <= int(valor) <= 65535:
+            return "el puerto tiene que ser un número entre 1 y 65535"
+        return ""
+    if tipo == "subdomain":
+        if not re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", valor):
+            return "un subdominio tiene que llevar al menos un punto (ej. jellyfin.urbenserver.com)"
+        return ""
+    partes = urlparse(valor)
+    if partes.scheme not in ("http", "https") or not partes.hostname:
+        return "la URL externa no empieza por http:// o https://"
+    if "." not in partes.hostname and partes.hostname != "localhost":
+        return f"«{partes.hostname}» no es un dominio"
+    return ""
+
+
+def _validar_plan(db_path: str, plan: PlanPropuesta) -> tuple[dict, list[str], list[str]]:
+    """Valida y sanea la propuesta.
+
+    Devuelve (plan_limpio, errores, avisos):
+
+      · `errores` → lo que el modelo tiene que CORREGIR. Si hay alguno, la
+        propuesta no se guarda y se le devuelve la lista para que lo reintente
+        (hasta `intentos_max()` veces).
+      · `avisos`  → cosas que dependen de lo que ya hay en el portal y que
+        reintentar no arregla: la sección ya existe, la entrada está duplicada,
+        el grupo no aparece… Se aplican igual y se le enseñan al usuario.
+    """
+    errores: list[str] = []
     avisos: list[str] = []
     existentes = {_normalizar(s["name"]): s["name"] for s in _secciones(db_path)}
 
+    resumen = re.sub(r"\s+", " ", (plan.resumen or "")).strip()[:600]
+    if not resumen:
+        errores.append("falta el resumen: una o dos frases con lo que propones")
+
+    if len(plan.entradas) > MAX_ENTRADAS_PLAN:
+        errores.append(f"demasiadas entradas ({len(plan.entradas)}); el máximo es "
+                       f"{MAX_ENTRADAS_PLAN}: divide la propuesta en varias")
+    if len(plan.secciones_nuevas) > MAX_SECCIONES_PLAN:
+        errores.append(f"demasiadas secciones nuevas (máximo {MAX_SECCIONES_PLAN})")
+
     nuevas: list[str] = []
     for nombre in plan.secciones_nuevas[:MAX_SECCIONES_PLAN]:
-        nombre = re.sub(r"\s+", " ", nombre).strip()[:60]
+        nombre = re.sub(r"\s+", " ", nombre).strip()
         if not nombre:
+            errores.append("hay una sección nueva sin nombre")
+            continue
+        if len(nombre) > 60:
+            errores.append(f"el nombre de sección «{nombre[:30]}…» pasa de 60 caracteres")
             continue
         if _normalizar(nombre) in existentes:
             avisos.append(f"la sección «{nombre}» ya existe, se usa la que hay")
@@ -502,14 +582,25 @@ def _validar_plan(db_path: str, plan: PlanPropuesta) -> tuple[dict, list[str]]:
             existentes[_normalizar(nombre)] = nombre
 
     entradas: list[dict] = []
-    for entrada in plan.entradas[:MAX_ENTRADAS_PLAN]:
-        titulo = re.sub(r"\s+", " ", (entrada.titulo or "")).strip()[:90]
+    vistas: dict[tuple[str, str], int] = {}
+    # Una entrada que solo hace de carpeta no necesita enlace propio: se acepta
+    # sin `urls` si otra entrada de la propuesta cuelga de ella con `dentro_de`.
+    # Así el modelo no tiene que repetir en el grupo los enlaces de sus hijas.
+    padres_usados = {_normalizar(e.dentro_de) for e in plan.entradas if (e.dentro_de or "").strip()}
+    for indice, entrada in enumerate(plan.entradas, 1):
+        titulo = re.sub(r"\s+", " ", (entrada.titulo or "")).strip()
+        etiqueta = f"entrada {indice} («{titulo or 'sin título'}»)"
         if not titulo:
-            avisos.append("una entrada venía sin título y se ha descartado")
-            continue
-        seccion = re.sub(r"\s+", " ", (entrada.seccion or "")).strip()[:60]
+            errores.append(f"{etiqueta}: falta el título")
+        elif len(titulo) > 90:
+            errores.append(f"{etiqueta}: el título pasa de 90 caracteres")
+
+        seccion = re.sub(r"\s+", " ", (entrada.seccion or "")).strip()
         if not seccion:
-            avisos.append(f"«{titulo}» venía sin sección y se ha descartado")
+            errores.append(f"{etiqueta}: falta la sección")
+            continue
+        if len(seccion) > 60:
+            errores.append(f"{etiqueta}: el nombre de sección pasa de 60 caracteres")
             continue
         if _normalizar(seccion) not in existentes:
             if len(nuevas) < MAX_SECCIONES_PLAN:
@@ -517,26 +608,47 @@ def _validar_plan(db_path: str, plan: PlanPropuesta) -> tuple[dict, list[str]]:
                 existentes[_normalizar(seccion)] = seccion
                 avisos.append(f"la sección «{seccion}» no existía: se creará")
             else:
-                avisos.append(f"demasiadas secciones; «{titulo}» se ha descartado")
+                errores.append(f"{etiqueta}: la sección «{seccion}» no existe y ya hay "
+                               f"{MAX_SECCIONES_PLAN} secciones nuevas")
                 continue
+
+        es_carpeta = _normalizar(titulo) in padres_usados
+        if not entrada.urls and not es_carpeta:
+            errores.append(f"{etiqueta}: no tiene ningún enlace")
+            continue
+        if len(entrada.urls) > MAX_URLS_ENTRADA:
+            errores.append(f"{etiqueta}: tiene más de {MAX_URLS_ENTRADA} enlaces")
 
         urls = []
         for url in (entrada.urls or [])[:MAX_URLS_ENTRADA]:
             valor = (url.valor or "").strip()[:500]
-            if not valor:
-                continue
             tipo = url.tipo if url.tipo in TIPOS_ENLACE else "external_url"
             if tipo == "internal_app":
-                valor = re.sub(r"\D", "", valor)[:5]
-                if not valor:
-                    continue
-            elif tipo == "external_url":
-                if not valor.startswith(("http://", "https://")):
-                    valor = "https://" + valor.lstrip("/")
+                valor = re.sub(r"\D", "", valor)
+            elif tipo == "external_url" and not valor.startswith(("http://", "https://")):
+                valor = "https://" + valor.lstrip("/")
+            if not valor:
+                if tipo == "internal_app":
+                    errores.append(f"{etiqueta}: el puerto tiene que ser un número "
+                                   f"(llegó «{(url.valor or '')[:20]}»)")
+                else:
+                    errores.append(f"{etiqueta}: hay un enlace vacío")
+                continue
+            problema = _problema_url(tipo, valor.lower() if tipo != "external_url" else valor)
+            if problema:
+                errores.append(f"{etiqueta}: {problema} (valor: «{valor[:40]}»)")
+                continue
             urls.append({"valor": valor, "etiqueta": (url.etiqueta or "").strip()[:40], "tipo": tipo})
-        if not urls:
-            avisos.append(f"«{titulo}» no tenía ningún enlace válido y se ha descartado")
+
+        if not urls and not es_carpeta:
+            errores.append(f"{etiqueta}: ningún enlace válido")
             continue
+
+        clave = (_normalizar(seccion), _normalizar(titulo))
+        if clave in vistas:
+            errores.append(f"{etiqueta}: ya hay otra entrada con ese título en la misma sección")
+            continue
+        vistas[clave] = indice
 
         entradas.append({
             "titulo": titulo,
@@ -547,22 +659,25 @@ def _validar_plan(db_path: str, plan: PlanPropuesta) -> tuple[dict, list[str]]:
         })
 
     movimientos = []
-    for mov in plan.movimientos[:20]:
-        entrada = (mov.entrada or "").strip()[:90]
+    for indice, mov in enumerate(plan.movimientos[:20], 1):
+        entrada = re.sub(r"\s+", " ", (mov.entrada or "")).strip()[:90]
         destino = re.sub(r"\s+", " ", (mov.seccion_destino or "")).strip()[:60]
         if not entrada or not destino:
+            errores.append(f"movimiento {indice}: hacen falta la entrada y la sección de destino")
             continue
         movimientos.append({"entrada": entrada, "seccion_destino": destino})
 
+    if not entradas and not movimientos and not errores:
+        errores.append("la propuesta no crea ni mueve nada")
+
     limpio = {
-        "resumen": (plan.resumen or "").strip()[:600],
+        "version": VERSION_PLAN,
+        "resumen": resumen,
         "secciones_nuevas": nuevas,
         "entradas": entradas,
         "movimientos": movimientos,
     }
-    if not entradas and not movimientos:
-        avisos.append("la propuesta no crea ni mueve nada")
-    return limpio, avisos
+    return limpio, errores, avisos
 
 
 # --------------------------------------------------------------------------
@@ -786,6 +901,45 @@ CÓMO TRABAJAS
    verá la propuesta con botones Aplicar / Descartar: no le pidas que confirme
    por escrito, ya tiene el botón.
 
+TEXTO DESORDENADO
+El usuario puede pegarte texto sin ordenar —notas, una lista de la compra de
+apps, un copiar y pegar de un chat, nombres sueltos con enlaces a mitad—. Eso es
+lo normal, no un error: tu trabajo es REORGANIZARLO.
+- Saca de ahí las entradas: un nombre y sus enlaces.
+- Agrupa por tema y elige el nombre de sección que mejor encaje con las que ya
+  hay; crea una nueva solo si ninguna sirve.
+- Cuando varias cosas son del mismo tipo (por ejemplo, varios servicios de
+  descargas), conviértelas en un grupo: una entrada-carpeta y las demás
+  `dentro_de` ella.
+- Normaliza títulos y descripciones; no copies la frase entera del texto pegado.
+- Si el texto no trae NI UN enlace, no inventes URLs ni puertos: pregunta por
+  ellas. Una entrada sin enlace no vale y la validación la rechaza.
+- Excepción: si una entrada es SOLO una carpeta (otras cuelgan de ella con
+  `dentro_de`), puede ir sin `urls`. No le repitas los enlaces de sus hijas.
+
+LA PROPUESTA ES UN JSON CON ESTA FORMA FIJA
+{
+  "version": 1,
+  "resumen": "una o dos frases",
+  "secciones_nuevas": ["Nombre"],
+  "entradas": [
+    {"titulo": "...", "seccion": "...", "descripcion": "...",
+     "dentro_de": "",
+     "urls": [{"valor": "...", "etiqueta": "...", "tipo": "external_url"}]}
+  ],
+  "movimientos": [{"entrada": "título o id", "seccion_destino": "Nombre"}]
+}
+Todos los campos son obligatorios salvo `dentro_de`, `descripcion` y
+`etiqueta` (pueden ir vacíos), y `movimientos`/`secciones_nuevas` (pueden ir
+vacíos). No añadas claves nuevas.
+
+VALIDACIÓN E INTENTOS
+`proponer_plan` valida ese JSON en el servidor. Si algo no cumple, te devuelve
+la lista exacta de errores y puedes corregir y volver a llamarla, pero hay un
+número LIMITADO de intentos (te lo dirá cada respuesta). Si se agotan, no habrá
+propuesta: en ese caso dilo con claridad ("no he podido generar una propuesta
+válida") y no te inventes que la has creado.
+
 REGLAS DURAS
 - No puedes borrar nada. No ofrezcas borrar, ni vaciar secciones. Solo crear y mover.
 - Un `tipo` de enlace se elige así: `external_url` para una URL completa;
@@ -850,6 +1004,14 @@ def historial_visible(db_path: str, conversacion_id: str) -> dict:
     return {"mensajes": mensajes, "propuestas": propuestas}
 
 
+def _crear_llm() -> ChatOpenAI:
+    """El cliente del modelo. En una función aparte para poder sustituirlo en
+    las pruebas sin tocar la red (monkeypatch de `agente._crear_llm`)."""
+    return ChatOpenAI(model=modelo(), base_url=base_url(), api_key=clave_api(),
+                      temperature=0.2, timeout=_segundos("AGENTE_TIMEOUT", 60),
+                      max_retries=1)
+
+
 def responder(db_path: str, conversacion_id: str, mensaje: str, entorno: Entorno) -> dict:
     """Un turno de conversación. Devuelve siempre un dict; nunca lanza."""
     mensaje = (mensaje or "").strip()
@@ -865,10 +1027,7 @@ def responder(db_path: str, conversacion_id: str, mensaje: str, entorno: Entorno
     por_nombre = {h.name: h for h in herramientas}
 
     try:
-        llm = ChatOpenAI(model=modelo(), base_url=base_url(), api_key=clave_api(),
-                         temperature=0.2, timeout=_segundos("AGENTE_TIMEOUT", 60),
-                         max_retries=1)
-        llm_con_tools = llm.bind_tools(herramientas)
+        llm_con_tools = _crear_llm().bind_tools(herramientas)
     except Exception as exc:
         return {"ok": False, "error": f"No se pudo preparar el modelo: {exc}"[:300]}
 
@@ -917,12 +1076,28 @@ def responder(db_path: str, conversacion_id: str, mensaje: str, entorno: Entorno
             if not respuesta_texto and (ai.content or "").strip():
                 respuesta_texto = ai.content.strip()
             break
+        if caja.get("fallido"):
+            # Se agotaron los intentos de validación: no hay propuesta que enseñar
+            break
 
     if error:
         texto = ("No he podido terminar la consulta. El modelo respondió con un error: "
                  f"{error}")
         _guardar_mensaje(db_path, conversacion_id, "assistant", texto, traza)
         return {"ok": False, "error": texto, "traza": traza}
+
+    if caja.get("fallido") and not caja.get("propuesta_id"):
+        detalle = "; ".join((caja.get("ultimos_errores") or [])[:5])
+        respuesta_texto = (
+            f"No he podido generar una propuesta válida después de {caja.get('intentos', 0)} "
+            f"intento(s), así que no hay nada que aplicar y no he tocado el portal."
+            + (f" Lo que no cumplía: {detalle}." if detalle else "")
+            + " Prueba a dármelo en trozos más pequeños, con los enlaces uno a uno,"
+              " o dime tú en qué sección va cada cosa.")
+        _guardar_mensaje(db_path, conversacion_id, "assistant", respuesta_texto, traza)
+        return {"ok": False, "fallido": True, "respuesta": respuesta_texto,
+                "intentos": caja.get("intentos", 0), "traza": traza,
+                "propuesta": None, "propuesta_id": None}
 
     if not respuesta_texto:
         if caja.get("propuesta_id"):
@@ -937,6 +1112,7 @@ def responder(db_path: str, conversacion_id: str, mensaje: str, entorno: Entorno
     _guardar_mensaje(db_path, conversacion_id, "assistant", respuesta_texto, traza)
 
     return {"ok": True, "respuesta": respuesta_texto, "traza": traza,
+            "intentos": caja.get("intentos", 0),
             "propuesta": caja.get("propuesta"), "propuesta_id": caja.get("propuesta_id")}
 
 
@@ -957,7 +1133,13 @@ def _resumen_herramienta(nombre: str, argumentos: dict, contenido: str) -> str:
     if nombre == "buscar_en_portal":
         return f"buscó «{argumentos.get('texto', '')}»"
     if nombre == "proponer_plan":
-        return "preparó la propuesta"
+        if "válida y guardada" in contenido:
+            return "propuesta validada"
+        if "no quedan más" in contenido:
+            return "propuesta inválida: sin más intentos"
+        if "No quedan intentos" in contenido:
+            return "sin intentos de validación"
+        return "propuesta rechazada: la corrige"
     return f"usó {nombre}"
 
 

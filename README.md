@@ -45,6 +45,7 @@ y ejecuta `docker compose up -d --force-recreate` desde
 | `AGENTE_MODELO` | `deepseek-chat` | Modelo a usar |
 | `AGENTE_BASE_URL` | `https://api.deepseek.com/v1` | Cualquier API compatible con OpenAI (incluido un Ollama local) |
 | `AGENTE_LEER_INTERNAS` | `1` | Deja al agente leer URLs de la LAN (puertos, subdominios propios) |
+| `AGENTE_INTENTOS` | `3` | Veces que puede corregir la propuesta antes de rendirse (1-6) |
 | `AGENTE_TIMEOUT` | `60` | Segundos máximos por llamada al modelo |
 | `AGENTE_TIMEOUT_WEB` | `12` | Segundos máximos para leer una página ajena |
 
@@ -99,6 +100,51 @@ El flujo, en corto:
 
 Lo que **no** puede hacer: borrar. No hay herramienta para ello y el servidor
 rechaza cualquier plan que no sea crear o mover.
+
+### El JSON de la propuesta y su validación
+
+Acepta tanto enlaces sueltos como **texto sin ordenar** (notas, una lista
+pegada de un chat, nombres con enlaces a mitad). De ahí saca las tarjetas y las
+agrupa. Lo que propone siempre tiene esta forma, y es lo que se guarda:
+
+```json
+{
+  "version": 1,
+  "resumen": "una o dos frases",
+  "secciones_nuevas": ["Nombre"],
+  "entradas": [
+    {
+      "titulo": "Plex",
+      "seccion": "Peliculas/Videos 📼",
+      "descripcion": "Servidor multimedia",
+      "dentro_de": "",
+      "urls": [
+        {"valor": "https://www.plex.tv/", "etiqueta": "Web oficial", "tipo": "external_url"},
+        {"valor": "32400", "etiqueta": "Mi servidor", "tipo": "internal_app"}
+      ]
+    }
+  ],
+  "movimientos": [{"entrada": "Immich", "seccion_destino": "IA"}]
+}
+```
+
+La validación corre **en el servidor** y distingue dos cosas:
+
+| | Qué es | Qué pasa |
+|---|---|---|
+| **Errores** | falta el resumen, un título, la sección o un enlace; puerto que no es un número; subdominio sin punto; URL que no es un dominio; dos tarjetas con el mismo título en la misma sección; más de 40 entradas | la propuesta **no se guarda**: se le devuelven los errores al modelo y la corrige |
+| **Avisos** | la sección ya existe, la tarjeta ya está en el portal, el grupo no aparece | se aplica igual y se avisa en la tarjeta |
+
+Hay un número **limitado de intentos** (`AGENTE_INTENTOS`, por defecto 3). Si
+los agota, no se crea ninguna propuesta y el chat dice «no he podido generar
+una propuesta válida» con los motivos. Nunca se queda dando vueltas.
+
+Una entrada que solo hace de **carpeta** (otra cuelga de ella con `dentro_de`)
+puede ir sin `urls`: la tarjeta se dibuja con el mosaico de sus hijas y no repite
+sus enlaces.
+
+En la tarjeta de propuesta, **Ver JSON** enseña exactamente ese objeto y permite
+copiarlo.
 
 Detalles que importan:
 

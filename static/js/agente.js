@@ -135,8 +135,19 @@
       <div class="plan-pie">
         <button type="button" class="boton boton--principal" data-accion="aplicar">Aplicar</button>
         <button type="button" class="boton" data-accion="descartar">Descartar</button>
+        <button type="button" class="boton boton--plano plan-ver" data-accion="json">Ver JSON</button>
+      </div>
+      <div class="plan-json" hidden>
+        <div class="plan-json-cab">
+          <span>Esto es exactamente lo que se va a guardar</span>
+          <button type="button" class="boton boton--plano" data-accion="copiar">Copiar</button>
+        </div>
+        <pre class="plan-json-codigo"></pre>
       </div>
       <p class="plan-resultado" hidden></p>`;
+
+    // El JSON se pinta con textContent, nunca con innerHTML: viene del modelo.
+    caja.querySelector('.plan-json-codigo').textContent = JSON.stringify(plan, null, 2);
 
     if (estadoActual && estadoActual !== 'pendiente') {
       marcarResuelta(caja, estadoActual);
@@ -144,8 +155,19 @@
     caja.addEventListener('click', (ev) => {
       const boton = ev.target.closest('[data-accion]');
       if (!boton) return;
-      if (boton.dataset.accion === 'aplicar') aplicar(caja, id);
-      else descartar(caja, id);
+      const accion = boton.dataset.accion;
+      if (accion === 'aplicar') aplicar(caja, id);
+      else if (accion === 'descartar') descartar(caja, id);
+      else if (accion === 'json') {
+        const bloque = caja.querySelector('.plan-json');
+        bloque.hidden = !bloque.hidden;
+        boton.textContent = bloque.hidden ? 'Ver JSON' : 'Ocultar JSON';
+      } else if (accion === 'copiar') {
+        const texto = caja.querySelector('.plan-json-codigo').textContent;
+        const hecho = () => { boton.textContent = 'Copiado'; setTimeout(() => { boton.textContent = 'Copiar'; }, 1400); };
+        if (navigator.clipboard) navigator.clipboard.writeText(texto).then(hecho).catch(() => {});
+        else hecho();
+      }
     });
     return caja;
   }
@@ -154,7 +176,10 @@
     const etiqueta = caja.querySelector('[data-estado]');
     if (etiqueta) etiqueta.textContent = estadoTexto;
     caja.dataset.resuelta = estadoTexto;
-    caja.querySelectorAll('.plan-pie button').forEach(b => { b.disabled = true; });
+    // Solo se bloquean las dos acciones que deciden; «Ver JSON» debe seguir
+    // funcionando para poder revisar qué se aplicó.
+    caja.querySelectorAll('.plan-pie [data-accion="aplicar"], .plan-pie [data-accion="descartar"]')
+      .forEach(b => { b.disabled = true; });
   }
 
   /* --------------------------------------------------------------- acciones */
@@ -162,7 +187,8 @@
   async function aplicar(caja, id) {
     if (caja.dataset.resuelta) return;
     const pie = caja.querySelector('.plan-pie');
-    pie.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    const decidir = () => pie.querySelectorAll('[data-accion="aplicar"], [data-accion="descartar"]');
+    decidir().forEach(b => { b.disabled = true; });
     const nota = caja.querySelector('.plan-resultado');
     nota.hidden = false;
     nota.textContent = 'Aplicando…';
@@ -171,7 +197,7 @@
     if (!datos.ok) {
       nota.className = 'plan-resultado mal';
       nota.textContent = datos.error || 'No se pudo aplicar.';
-      pie.querySelectorAll('button').forEach(b => { b.disabled = false; });
+      decidir().forEach(b => { b.disabled = false; });
       return;
     }
 

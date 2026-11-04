@@ -120,8 +120,11 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("LINKMANAGER_COOKIE_SECURE", "0") == "1",
     MAX_CONTENT_LENGTH=int(os.environ.get("LINKMANAGER_MAX_UPLOAD_MB", "8")) * 1024 * 1024,
-    JSON_SORT_KEYS=False,
 )
+
+# El JSON de las propuestas se lee mejor con el orden en que se escribe
+# (resumen, secciones, entradas…). `JSON_SORT_KEYS` ya no existe en Flask 2.3+.
+app.json.sort_keys = False
 
 for carpeta in (os.path.dirname(DATABASE), UPLOAD_FOLDER):
     os.makedirs(carpeta, exist_ok=True)

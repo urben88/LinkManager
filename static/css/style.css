@@ -690,10 +690,28 @@ body.modo-edicion .tarjeta { padding-left: 0; }
 }
 .plan-movimiento { font-size: .78rem; color: var(--suave); padding: 3px 0; }
 
-.plan-pie { display: flex; gap: var(--e2); padding: var(--e3); border-top: 1px solid var(--borde); }
+.plan-pie { display: flex; gap: var(--e2); padding: var(--e3); border-top: 1px solid var(--borde); flex-wrap: wrap; }
 .plan-pie .boton { font-size: .8rem; padding: 7px var(--e3); }
 .plan-pie .boton:disabled { opacity: .45; cursor: default; }
+.plan-ver { margin-left: auto; color: var(--tenue); }
+.plan-ver:hover { color: var(--texto); }
 .plan-resultado { margin: 0; padding: 0 var(--e3) var(--e3); font-size: .76rem; }
+
+/* El JSON tal cual: la estructura que se aplica, para copiarla o revisarla. */
+.plan-json { border-top: 1px solid var(--borde); background: var(--fondo); }
+.plan-json-cab {
+  display: flex; align-items: center; gap: var(--e2);
+  padding: var(--e2) var(--e3) 0;
+  font-size: .68rem; color: var(--tenue);
+}
+.plan-json-cab .boton { margin-left: auto; font-size: .7rem; padding: 3px 8px; }
+.plan-json-codigo {
+  margin: 0; padding: var(--e3);
+  max-height: 260px; overflow-y: auto; overflow-x: hidden;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .68rem; line-height: 1.5; color: var(--suave);
+  white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2;
+}
 
 /* ------------------------------------------------------------ compositor */
 
