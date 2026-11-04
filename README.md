@@ -46,6 +46,8 @@ y ejecuta `docker compose up -d --force-recreate` desde
 | `AGENTE_BASE_URL` | `https://api.deepseek.com/v1` | Cualquier API compatible con OpenAI (incluido un Ollama local) |
 | `AGENTE_LEER_INTERNAS` | `1` | Deja al agente leer URLs de la LAN (puertos, subdominios propios) |
 | `AGENTE_INTENTOS` | `3` | Veces que puede corregir la propuesta antes de rendirse (1-6) |
+| `AGENTE_LIMITE_SESION` | `30` | Consultas por sesión cada 15 minutos (freno de gasto) |
+| `AGENTE_LIMITE_HORA` | `120` | Consultas por hora en todo el portal |
 | `AGENTE_TIMEOUT` | `60` | Segundos máximos por llamada al modelo |
 | `AGENTE_TIMEOUT_WEB` | `12` | Segundos máximos para leer una página ajena |
 
@@ -145,6 +147,24 @@ sus enlaces.
 
 En la tarjeta de propuesta, **Ver JSON** enseña exactamente ese objeto y permite
 copiarlo.
+
+### Seguridad y gasto
+
+- **Solo con sesión.** Las cinco rutas `/agente/*` exigen login: sin sesión
+  redirigen a `/login`, aunque se lleve un token CSRF válido. El botón no se
+  pinta si no has entrado.
+- **CSRF** en todos los POST (como el resto de la aplicación).
+- **Frenos de gasto**: `AGENTE_LIMITE_SESION` consultas cada 15 minutos por
+  sesión y `AGENTE_LIMITE_HORA` por hora en todo el portal (esta última se cuenta
+  en la base, porque los 4 workers de gunicorn no comparten memoria). Al pasarse,
+  respuesta 429 con un mensaje claro.
+- **`Cache-Control: no-store`** y `X-Robots-Tag: noindex` en las respuestas del
+  asistente: el hilo lleva notas privadas.
+- **La clave nunca sale del proceso**: no se guarda en la base, no se registra en
+  los logs y cualquier texto de error se limpia antes de devolverse
+  (`_sin_secretos`).
+- **Rotar la clave**: se edita `AGENTE_API_KEY` en el `.env` del stack
+  (`chmod 600`) y se recrea el contenedor. No hay que reconstruir la imagen.
 
 Detalles que importan:
 

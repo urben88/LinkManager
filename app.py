@@ -212,6 +212,10 @@ def _cabeceras(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
+    # El hilo del asistente lleva notas y enlaces privados: ni caché ni índice.
+    if request.path.startswith("/agente"):
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["X-Robots-Tag"] = "noindex, nofollow"
     return resp
 
 
@@ -819,6 +823,51 @@ def _agente_no_disponible():
                     "error": "El asistente no está disponible (falta la clave del modelo)."}), 503
 
 
+# --------------------------------------------------------------------------
+#  Límites de uso: el asistente cuesta dinero y solo se llega con sesión, pero
+#  una sesión robada (o un dedo pegado al Enter) no puede vaciar el saldo.
+#  Dos topes: por sesión y global por hora (este último se cuenta en la base,
+#  porque gunicorn tiene 4 workers y no comparten memoria).
+# --------------------------------------------------------------------------
+
+VENTANA_SESION = 900  # 15 minutos
+
+
+def _entero_env(nombre, defecto):
+    try:
+        return max(1, int(os.environ.get(nombre, str(defecto))))
+    except (TypeError, ValueError):
+        return defecto
+
+
+def _limite_agente():
+    """None si se puede seguir; si no, (respuesta, 429)."""
+    ahora = time.time()
+    usos = [t for t in session.get("agente_usos", []) if ahora - t < VENTANA_SESION]
+    maximo_sesion = _entero_env("AGENTE_LIMITE_SESION", 30)
+    if len(usos) >= maximo_sesion:
+        return jsonify({"ok": False, "error": (
+            f"Has hecho {maximo_sesion} consultas en 15 minutos. Espera un poco y sigue: "
+            "así el asistente no se dispara de gasto.")}), 429
+
+    maximo_hora = _entero_env("AGENTE_LIMITE_HORA", 120)
+    try:
+        fila = get_db().execute(
+            "SELECT COUNT(*) FROM agente_mensajes WHERE rol = 'user' "
+            "AND creada >= datetime('now', '-1 hour')").fetchone()
+        total = int(fila[0]) if fila else 0
+    except sqlite3.Error:
+        total = 0
+    if total >= maximo_hora:
+        return jsonify({"ok": False, "error": (
+            f"Se han hecho {maximo_hora} consultas en la última hora en todo el portal. "
+            "Es un freno de seguridad del asistente; inténtalo más tarde.")}), 429
+
+    usos.append(ahora)
+    session["agente_usos"] = usos[-maximo_sesion:]
+    return None
+
+
 @app.route("/agente/historial")
 @login_required
 def agente_historial():
@@ -834,6 +883,9 @@ def agente_historial():
 def agente_mensaje():
     if agente is None or not agente.disponible():
         return _agente_no_disponible()
+    freno = _limite_agente()
+    if freno is not None:
+        return freno
     datos = request.get_json(silent=True) or {}
     resultado = agente.responder(DATABASE, _conversacion_actual(),
                                  datos.get("mensaje", ""), _contexto_agente())

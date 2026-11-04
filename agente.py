@@ -1004,6 +1004,20 @@ def historial_visible(db_path: str, conversacion_id: str) -> dict:
     return {"mensajes": mensajes, "propuestas": propuestas}
 
 
+def _sin_secretos(texto: str) -> str:
+    """Quita la clave del modelo de cualquier texto que se devuelva o se registre.
+
+    La clave no debería aparecer nunca en un error, pero un proveedor podría
+    incluirla en el mensaje de una excepción: esto lo corta antes de que salga
+    del proceso.
+    """
+    texto = str(texto or "")
+    clave = clave_api()
+    if clave and clave in texto:
+        texto = texto.replace(clave, "***")
+    return texto
+
+
 def _crear_llm() -> ChatOpenAI:
     """El cliente del modelo. En una función aparte para poder sustituirlo en
     las pruebas sin tocar la red (monkeypatch de `agente._crear_llm`)."""
@@ -1029,7 +1043,7 @@ def responder(db_path: str, conversacion_id: str, mensaje: str, entorno: Entorno
     try:
         llm_con_tools = _crear_llm().bind_tools(herramientas)
     except Exception as exc:
-        return {"ok": False, "error": f"No se pudo preparar el modelo: {exc}"[:300]}
+        return {"ok": False, "error": _sin_secretos(f"No se pudo preparar el modelo: {exc}")[:300]}
 
     mensajes = [SystemMessage(INSTRUCCIONES + "\n\n" + _resumen_portal(db_path))]
     for m in _historial(db_path, conversacion_id):
@@ -1065,7 +1079,8 @@ def responder(db_path: str, conversacion_id: str, mensaje: str, entorno: Entorno
                 try:
                     contenido = herramienta.invoke(argumentos)
                 except Exception as exc:
-                    contenido = f"Error al ejecutar {nombre}: {type(exc).__name__}: {exc}"[:300]
+                    contenido = _sin_secretos(
+                        f"Error al ejecutar {nombre}: {type(exc).__name__}: {exc}")[:300]
             contenido = str(contenido)
             traza.append({"herramienta": nombre,
                           "resumen": _resumen_herramienta(nombre, argumentos, contenido)})
@@ -1081,8 +1096,8 @@ def responder(db_path: str, conversacion_id: str, mensaje: str, entorno: Entorno
             break
 
     if error:
-        texto = ("No he podido terminar la consulta. El modelo respondió con un error: "
-                 f"{error}")
+        texto = _sin_secretos("No he podido terminar la consulta. El modelo respondió con un error: "
+                              f"{error}")
         _guardar_mensaje(db_path, conversacion_id, "assistant", texto, traza)
         return {"ok": False, "error": texto, "traza": traza}
 
