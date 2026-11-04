@@ -2,3 +2,11 @@ Flask>=2.0
 requests>=2.25
 beautifulsoup4>=4.9
 gunicorn>=20.0  # Si planeas usar Gunicorn para producción (ej. con Docker)
+
+# ---------------------------------------------------------------- asistente
+# El agente del portal: LangChain + un modelo compatible con la API de OpenAI
+# (DeepSeek por defecto, se cambia con AGENTE_BASE_URL / AGENTE_MODELO).
+# app.py los importa con tolerancia: si faltan, el portal arranca igual y el
+# botón del asistente simplemente no aparece.
+langchain>=0.3.7,<0.4
+langchain-openai>=0.2.9,<0.4

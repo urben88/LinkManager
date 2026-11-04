@@ -5,5 +5,4 @@ node_modules/
 .git/
 __pycache__/
 *.pyc
-schema.sql
 README.md

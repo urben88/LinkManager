@@ -36,6 +36,14 @@ from flask import (Flask, abort, flash, g, jsonify, redirect, render_template,
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+# El asistente es opcional: si langchain no está instalado o la clave falta, el
+# portal tiene que arrancar igual. Nunca un import que tumbe la aplicación.
+try:
+    import agente
+except Exception as _exc_agente:  # noqa: BLE001
+    agente = None
+    print(f"[linkmanager] asistente desactivado: {_exc_agente}")
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
@@ -206,7 +214,8 @@ def _cabeceras(resp):
 
 @app.context_processor
 def _inyectar():
-    return {"logueado": logueado(), "csrf_token": csrf_token, "privado": PRIVADO}
+    return {"logueado": logueado(), "csrf_token": csrf_token, "privado": PRIVADO,
+            "agente_disponible": bool(agente is not None and agente.disponible())}
 
 
 def tono(texto: str) -> int:
@@ -784,6 +793,78 @@ def servidor():
 
 
 # --------------------------------------------------------------------------
+#  Asistente (LangChain) — propone, nunca escribe sin aprobación
+# --------------------------------------------------------------------------
+
+def _contexto_agente():
+    """El agente reutiliza la guarda anti-SSRF del portal."""
+    return agente.Entorno(db_path=DATABASE, permitir_url=_url_permitida)
+
+
+def _conversacion_actual():
+    """La conversación vive en la sesión firmada, pero el contenido en SQLite:
+    con 4 workers de gunicorn, la memoria del proceso no sirve."""
+    conv = session.get("agente_conv")
+    if not conv or not agente.conversacion_valida(DATABASE, conv):
+        conv = agente.nueva_conversacion(DATABASE)
+        session["agente_conv"] = conv
+    return conv
+
+
+def _agente_no_disponible():
+    return jsonify({"ok": False,
+                    "error": "El asistente no está disponible (falta la clave del modelo)."}), 503
+
+
+@app.route("/agente/historial")
+@login_required
+def agente_historial():
+    if agente is None or not agente.disponible():
+        return _agente_no_disponible()
+    conv = _conversacion_actual()
+    datos = agente.historial_visible(DATABASE, conv)
+    return jsonify({"ok": True, "conversacion": conv, **datos})
+
+
+@app.route("/agente/mensaje", methods=["POST"])
+@login_required
+def agente_mensaje():
+    if agente is None or not agente.disponible():
+        return _agente_no_disponible()
+    datos = request.get_json(silent=True) or {}
+    resultado = agente.responder(DATABASE, _conversacion_actual(),
+                                 datos.get("mensaje", ""), _contexto_agente())
+    return jsonify(resultado), (200 if resultado.get("ok") else 400)
+
+
+@app.route("/agente/aplicar/<propuesta_id>", methods=["POST"])
+@login_required
+def agente_aplicar(propuesta_id):
+    if agente is None:
+        return _agente_no_disponible()
+    resultado = agente.aplicar_propuesta(DATABASE, propuesta_id, _contexto_agente())
+    return jsonify(resultado), (200 if resultado.get("ok") else 400)
+
+
+@app.route("/agente/descartar/<propuesta_id>", methods=["POST"])
+@login_required
+def agente_descartar(propuesta_id):
+    if agente is None:
+        return _agente_no_disponible()
+    resultado = agente.descartar_propuesta(DATABASE, propuesta_id)
+    return jsonify(resultado), (200 if resultado.get("ok") else 400)
+
+
+@app.route("/agente/nueva", methods=["POST"])
+@login_required
+def agente_nueva():
+    if agente is None:
+        return _agente_no_disponible()
+    session["agente_conv"] = agente.nueva_conversacion(DATABASE)
+    return jsonify({"ok": True, "conversacion": session["agente_conv"]})
+
+
+# --------------------------------------------------------------------------
 #  Arranque
 # --------------------------------------------------------------------------
 
@@ -842,6 +923,11 @@ def check_and_create_db():
         print(f"[linkmanager] base de datos no encontrada en {DATABASE}; creando…")
         init_db()
     _migrar_columnas()
+    if agente is not None:
+        try:
+            agente.preparar(DATABASE)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[linkmanager] no se pudieron crear las tablas del asistente: {exc}")
 
 
 check_and_create_db()

@@ -40,6 +40,13 @@ y ejecuta `docker compose up -d --force-recreate` desde
 | `LINKMANAGER_MAX_UPLOAD_MB` | `8` | Tamaño máximo de imagen |
 | `CATALOGO_JSON` | `/app/servicios.json` | Catálogo de servicios para `/servidor` |
 | `LINKMANAGER_DB` | `/app/database/database.db` | Base de datos SQLite |
+| `AGENTE_ACTIVO` | `1` | `0` = sin asistente: ni botón ni rutas `/agente/*` |
+| `AGENTE_API_KEY` | — | Clave del modelo. Vive en el `.env` del stack, no aquí |
+| `AGENTE_MODELO` | `deepseek-chat` | Modelo a usar |
+| `AGENTE_BASE_URL` | `https://api.deepseek.com/v1` | Cualquier API compatible con OpenAI (incluido un Ollama local) |
+| `AGENTE_LEER_INTERNAS` | `1` | Deja al agente leer URLs de la LAN (puertos, subdominios propios) |
+| `AGENTE_TIMEOUT` | `60` | Segundos máximos por llamada al modelo |
+| `AGENTE_TIMEOUT_WEB` | `12` | Segundos máximos para leer una página ajena |
 
 ## Modelo de datos
 
@@ -62,6 +69,48 @@ como portada.
 `parent_id` convierte una entrada en **carpeta**: las que cuelgan de ella se
 despliegan al abrirla, y la tarjeta enseña un mosaico con lo que lleva dentro.
 Solo hay dos niveles; borrar una carpeta no borra su contenido, lo deja suelto.
+
+El asistente guarda lo suyo aparte, nunca dentro de las tablas del portal:
+
+```
+agente_conversaciones (id, creada, actualizada)
+  ├── agente_mensajes (id, conversacion_id, rol, contenido, traza)
+  └── agente_propuestas (id, conversacion_id, plan_json, estado, resultado_json)
+```
+
+## El asistente (agente de IA)
+
+Con sesión iniciada, el botón **Asistente** de la cabecera abre un cajón donde se
+le pegan enlaces y se le cuenta qué se quiere. Él los lee, mira qué hay ya en el
+portal y **propone** secciones, tarjetas y carpetas. Nada se guarda hasta que el
+usuario pulsa **Aplicar** en la tarjeta de la propuesta.
+
+El flujo, en corto:
+
+1. `agente.py` monta un agente de LangChain (`langchain-core` + `langchain-openai`)
+   con cuatro herramientas: `leer_enlaces`, `consultar_portal`,
+   `buscar_en_portal` y `proponer_plan`.
+2. `proponer_plan` **no escribe en el portal**: valida el plan y lo guarda en
+   `agente_propuestas` como pendiente. Es el único camino de escritura que tiene
+   el modelo.
+3. `POST /agente/aplicar/<id>` es el que escribe de verdad, en una transacción y
+   una sola vez (la segunda devuelve «ya está aplicada»). Crea secciones, inserta
+   entradas, resuelve los grupos y mueve entradas entre secciones.
+
+Lo que **no** puede hacer: borrar. No hay herramienta para ello y el servidor
+rechaza cualquier plan que no sea crear o mover.
+
+Detalles que importan:
+
+- La conversación vive en SQLite, no en memoria: gunicorn corre 4 workers y cada
+  petición puede caer en uno distinto.
+- El bucle de herramientas es explícito (`bind_tools` + `tool_calls`) con tope de
+  pasos, tiempo y tamaño de texto leído. Si el modelo falla, el portal sigue en
+  pie y el error se pinta en el hilo.
+- La portada de una tarjeta nueva se saca del `og:image` de su enlace, igual que
+  cuando se añade a mano; si no hay, la tarjeta usa el monograma.
+- Sin `AGENTE_API_KEY` (o con `AGENTE_ACTIVO=0`) el botón no aparece y las rutas
+  `/agente/*` responden 503. El portal funciona exactamente igual que antes.
 
 ## Imágenes
 
