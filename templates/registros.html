@@ -62,7 +62,7 @@
       <button class="boton" type="button" data-copiar="token-nuevo-valor">Copiar token</button>
     </div>
     <p class="tenue">Comando listo para pegar en la herramienta:</p>
-    <pre id="token-nuevo-curl">curl -X POST https://www.urbenserver.com/api/ingesta \
+    <pre id="token-nuevo-curl" tabindex="0">curl -X POST https://www.urbenserver.com/api/ingesta \
   -H "Authorization: Bearer {{ token_nuevo.token }}" \
   -H "Content-Type: application/json" \
   -d '{"tipo":"anotacion","texto":"prueba","ruta":"/"}'</pre>
@@ -88,16 +88,16 @@
       </form>
 
       {% if fuentes %}
-      <div class="tabla-envoltorio">
+      <div class="tabla-envoltorio" tabindex="0" role="region" aria-label="Fuentes y tokens">
         <table class="tabla">
           <thead>
-            <tr><th>Fuente</th><th>Token</th><th class="ocultar-movil">Creado</th><th>Último uso</th><th><span class="oculto-visualmente">Acciones</span></th></tr>
+            <tr><th>Fuente</th><th class="ocultar-movil">Token</th><th class="ocultar-movil">Creado</th><th>Último uso</th><th><span class="oculto-visualmente">Acciones</span></th></tr>
           </thead>
           <tbody>
           {% for f in fuentes %}
             <tr>
               <td><strong>{{ f.nombre }}</strong></td>
-              <td><code class="mono">{{ f.prefijo }}…</code></td>
+              <td class="ocultar-movil"><code class="mono">{{ f.prefijo }}…</code></td>
               <td class="tenue ocultar-movil">{{ f.creado[:16] }}</td>
               <td class="tenue fecha-celda">{{ f.ultimo_uso_legible or 'nunca' }}</td>
               <td>
@@ -125,7 +125,7 @@
           <li>La herramienta (o un pequeño colector en su servidor) hace un POST a la URL con la cabecera <code>Authorization: Bearer &lt;token&gt;</code>; cada POST guarda un registro.</li>
         </ol>
         <p class="tenue">El token es un secreto de servidor: no lo pongas en el JavaScript del navegador. Si la herramienta no puede hacer HTTP, un colector puede leer su archivo de log y reenviar cada línea con este mismo contrato.</p>
-        <pre>curl -X POST https://www.urbenserver.com/api/ingesta \
+        <pre tabindex="0">curl -X POST https://www.urbenserver.com/api/ingesta \
   -H "Authorization: Bearer &lt;TOKEN&gt;" \
   -H "Content-Type: application/json" \
   -d '{"tipo":"log","texto":"hola","ruta":"/","usuario":"yo"}'</pre>
@@ -178,7 +178,7 @@
           </div>
           <details>
             <summary>{{ r.resumen or '(sin texto)' }}</summary>
-            <pre class="registro-json">{{ r.json }}</pre>
+            <pre class="registro-json" tabindex="0" aria-label="JSON del registro">{{ r.json }}</pre>
           </details>
           <div class="registro-acciones">
             <button class="boton" type="button" data-copiar="json-{{ r.id }}">Copiar JSON</button>
