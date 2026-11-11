@@ -626,7 +626,9 @@
     const enPanel = panel.contains(foco);
     if (enPanel || foco === document.body || foco === botonAbrir) {
       cerrar();
-      if (botonAbrir) botonAbrir.focus();   // el foco no se pierde al cerrar
+      // Si el botón vive en el menú móvil ya plegado, el foco vuelve a «Más acciones».
+      const volver = botonAbrir && botonAbrir.offsetParent ? botonAbrir : document.getElementById('cabecera-mas');
+      if (volver) volver.focus();   // el foco no se pierde al cerrar
     }
   });
 

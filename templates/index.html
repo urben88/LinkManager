@@ -113,7 +113,7 @@
 
     {% if sections_with_data %}
     <div class="cabecera-buscador">
-      {{ icono('buscar', 15) }}
+      {{ icono('buscar', 18) }}
       <label class="oculto-visualmente" for="buscador">Buscar enlaces</label>
       <input id="buscador" type="search" placeholder="Buscar…" autocomplete="off" aria-keyshortcuts="/">
       <kbd class="atajo" aria-hidden="true">/</kbd>
@@ -133,18 +133,20 @@
 
       {% if logueado %}
       <button class="boton-icono" id="modo-edicion" title="Modo edición" aria-pressed="false">{{ icono('lapiz', 16) }}</button>
-      {% if monitor_disponible %}
-      <button class="boton-icono" id="abrir-monitor" title="Estado del ordenador"
-              aria-controls="monitor" aria-expanded="false">{{ icono('pulso', 16) }}<span class="texto-boton">Monitor</span></button>
-      {% endif %}
-      {% if agente_disponible or puede_consola %}
-      <button class="boton-icono" id="abrir-agente" data-abrir-agente title="Asistente: enlaces{% if puede_consola %} y consola del servidor{% endif %}"
-              aria-controls="agente" aria-expanded="false">{{ icono('chispa', 16) }}<span class="texto-boton">Asistente</span></button>
-      {% endif %}
       {% endif %}
 
-      <a class="boton-icono" href="{{ url_for('servidor') }}" title="Servicios del servidor" aria-label="Servicios del servidor">{{ icono('servidor', 16) }}</a>
-      <button class="boton-icono" data-abrir="dlg-ajustes" title="Configuración de entornos">{{ icono('ajustes', 16) }}</button>
+      <div class="cabecera-extra" id="cabecera-extra">
+        {% if logueado and monitor_disponible %}
+        <button class="boton-icono" id="abrir-monitor" title="Estado del ordenador"
+                aria-controls="monitor" aria-expanded="false">{{ icono('pulso', 16) }}<span class="texto-boton">Monitor</span></button>
+        {% endif %}
+        {% if logueado and (agente_disponible or puede_consola) %}
+        <button class="boton-icono" id="abrir-agente" data-abrir-agente title="Asistente: enlaces{% if puede_consola %} y consola del servidor{% endif %}"
+                aria-controls="agente" aria-expanded="false">{{ icono('chispa', 16) }}<span class="texto-boton">Asistente</span></button>
+        {% endif %}
+        <a class="boton-icono" href="{{ url_for('servidor') }}" title="Servicios del servidor" aria-label="Servicios del servidor">{{ icono('servidor', 16) }}<span class="texto-menu">Servidor</span></a>
+        <button class="boton-icono" data-abrir="dlg-ajustes" title="Configuración de entornos" aria-label="Configuración de entornos">{{ icono('ajustes', 16) }}<span class="texto-menu">Entornos</span></button>
+      </div>
 
       {% if logueado %}
       <button class="boton boton--principal" data-abrir="dlg-nueva-entrada" aria-label="Nueva entrada" title="Nueva entrada">{{ icono('mas', 15) }}<span class="texto-boton">Entrada</span></button>
@@ -156,6 +158,9 @@
       {% else %}
       <a class="boton" href="{{ url_for('login') }}">{{ icono('entrar', 15) }}<span class="texto-boton">Entrar</span></a>
       {% endif %}
+
+      <button class="boton-icono cabecera-mas" id="cabecera-mas" type="button" title="Más acciones"
+              aria-label="Más acciones" aria-expanded="false" aria-controls="cabecera-extra">{{ icono('puntos', 18) }}</button>
     </div>
   </div>
 </header>

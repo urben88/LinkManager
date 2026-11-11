@@ -93,6 +93,47 @@
     if (origen && origen.isConnected) origen.focus();
   }
 
+  /* -------------------------------------------- acciones extra en el móvil
+
+     En teléfonos estrechos (≤480px) los accesos secundarios se pliegan tras
+     «Más acciones»: así los botones conservan un tamaño táctil cómodo. */
+
+  const masAcciones = $('#cabecera-mas');
+  const accionesExtra = $('#cabecera-extra');
+  const menuAbierto = () => !!accionesExtra?.classList.contains('abierta');
+
+  function cerrarMenu(devolverFoco) {
+    if (!menuAbierto()) return false;
+    accionesExtra.classList.remove('abierta');
+    masAcciones?.setAttribute('aria-expanded', 'false');
+    if (devolverFoco) masAcciones?.focus();
+    return true;
+  }
+
+  if (masAcciones && accionesExtra) {
+    masAcciones.addEventListener('click', () => {
+      if (menuAbierto()) { cerrarMenu(true); return; }
+      accionesExtra.classList.add('abierta');
+      masAcciones.setAttribute('aria-expanded', 'true');
+      const primero = accionesExtra.querySelector('button, a');
+      if (primero) setTimeout(() => primero.focus(), 30);
+    });
+    accionesExtra.addEventListener('click', (e) => {
+      const accion = e.target.closest('button, a');
+      if (!accion) return;
+      // Si abre un diálogo, el foco vuelve a «Más acciones» al cerrarlo:
+      // el botón original queda oculto al plegar el menú.
+      if (accion.matches('[data-abrir]')) masAcciones.focus();
+      cerrarMenu(false);
+    });
+    document.addEventListener('click', (e) => {
+      if (menuAbierto() && !accionesExtra.contains(e.target) && !masAcciones.contains(e.target)) {
+        cerrarMenu(false);
+      }
+    });
+    window.addEventListener('resize', () => { if (window.innerWidth > 480) cerrarMenu(false); });
+  }
+
   document.addEventListener('click', (e) => {
     const abridor = e.target.closest('[data-abrir]');
     if (abridor) { e.preventDefault(); abrir(abridor.dataset.abrir); return; }
@@ -108,6 +149,7 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (cerrarMenu(true)) { e.preventDefault(); return; }
       const abierto = $$('.dialogo:not([hidden])').pop();
       if (abierto) { cerrar(abierto); return; }
     }

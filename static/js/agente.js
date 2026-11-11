@@ -446,7 +446,9 @@
     if (foco && foco.closest('.xterm')) return;   // en la terminal, Esc es de la terminal
     if (panel.contains(foco) || foco === document.body || foco === abrirBtn) {
       cerrar();
-      if (abrirBtn) abrirBtn.focus();
+      // Si el botón vive en el menú móvil ya plegado, el foco vuelve a «Más acciones».
+      const volver = abrirBtn && abrirBtn.offsetParent ? abrirBtn : document.getElementById('cabecera-mas');
+      if (volver) volver.focus();
     }
   });
 

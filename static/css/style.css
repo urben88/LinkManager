@@ -76,7 +76,7 @@ button { font: inherit; }
 
 .cabecera-buscador { position: relative; flex: 1 1 220px; min-width: 140px; }
 .cabecera-buscador input {
-  width: 100%; padding: 9px var(--e4) 9px 34px;
+  width: 100%; padding: 9px var(--e4) 9px 39px;
   background: var(--superficie); color: var(--texto);
   border: 1px solid var(--borde); border-radius: var(--radio-sm);
   font-size: .875rem; font-family: inherit;
@@ -84,7 +84,15 @@ button { font: inherit; }
 }
 .cabecera-buscador input::placeholder { color: var(--tenue); }
 .cabecera-buscador input:focus { outline: none; border-color: var(--acento); background: var(--superficie-alta); }
-.cabecera-buscador svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--tenue); }
+/* Lupa: un poco mayor que el resto de iconos para que no se lea como una «Q».
+   No captura clics: pulsarla debe enfocar el campo. */
+.cabecera-buscador > svg {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  display: block; color: var(--suave); pointer-events: none;
+  stroke-width: 2.2;
+  transition: color .12s ease;
+}
+.cabecera-buscador:focus-within > svg { color: var(--acento); }
 .cabecera-buscador .atajo {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   font: 500 .72rem/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--tenue);
@@ -100,6 +108,11 @@ button { font: inherit; }
 }
 
 .cabecera-acciones { display: flex; align-items: center; gap: var(--e2); flex: none; }
+
+/* En escritorio estas acciones van en la misma fila; en el móvil se pliegan
+   tras «Más acciones» para dejar sitio y no achicar los botones. */
+.cabecera-extra { display: contents; }
+.cabecera-acciones .cabecera-mas, .texto-menu { display: none; }
 
 /* selector de entorno: control segmentado */
 .segmentado {
@@ -502,7 +515,7 @@ body.modo-edicion .tarjeta:not(:has(.tarjeta-portada, .tarjeta-mosaico)) .tarjet
   .cabecera-fila::after { content: ""; order: 5; flex-basis: 100%; height: 0; }
   .marca { margin-right: auto; }
   .cabecera-acciones { display: contents; }
-  .cabecera-acciones > * { order: 2; }
+  .cabecera-acciones > *, .cabecera-extra > * { order: 2; }
   .cabecera-buscador { order: 6; flex: 1 1 160px; min-width: 0; }
   .segmentado { order: 7; }
 }
@@ -517,10 +530,42 @@ body.modo-edicion .tarjeta:not(:has(.tarjeta-portada, .tarjeta-mosaico)) .tarjet
   .marca img { width: 30px; height: 30px; border-radius: 7px; }
   .cabecera-buscador .atajo { display: none; }
   .cabecera-fila { column-gap: 2px; }
-  .cabecera-acciones .boton-icono, .cabecera-acciones .boton { padding: 7px; }
+  .cabecera-acciones .boton-icono, .cabecera-acciones .boton {
+    padding: 7px; min-width: 36px; min-height: 36px;
+  }
   .segmentado button { padding: 5px 8px; }
   .rejilla, body.vista-portada .rejilla { grid-template-columns: 1fr; }
   .fila { grid-template-columns: 1fr; }
+}
+
+/* En teléfonos estrechos no caben todas las acciones sin apretujarlas:
+   Monitor, Asistente, Servidor y Entornos pasan a «Más acciones». */
+@media (max-width: 480px) {
+  .cabecera-acciones .cabecera-mas { display: inline-flex; }
+  .cabecera-extra { display: none; }
+  .cabecera-extra.abierta {
+    position: absolute; top: calc(100% + 6px); right: var(--e3); z-index: 45;
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+    min-width: 210px; padding: var(--e1);
+    background: var(--superficie); border: 1px solid var(--borde);
+    border-radius: var(--radio-sm); box-shadow: var(--sombra);
+  }
+  .cabecera-extra .boton-icono {
+    width: 100%; justify-content: flex-start; gap: var(--e2);
+    padding: 9px 12px; min-height: 40px;
+  }
+  .cabecera-extra .texto-boton, .cabecera-extra .texto-menu { display: inline; }
+}
+
+/* Pantallas muy estrechas: el selector de entorno cabe junto al buscador
+   en la misma fila, y los iconos no se apelotonan. */
+@media (max-width: 380px) {
+  .cabecera-fila { column-gap: 0; }
+  .cabecera-buscador { flex-basis: 120px; }
+  .cabecera-buscador input { padding-left: 35px; }
+  .cabecera-buscador > svg { left: 9px; }
+  .segmentado button { padding: 4px 7px; font-size: .72rem; }
+  .resumen { column-gap: var(--e3); row-gap: var(--e2); }
 }
 
 /* ---------------------------------------------------------------- accesibilidad */
