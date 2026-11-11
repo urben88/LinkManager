@@ -35,7 +35,13 @@
 
   function ponerAncho(ancho) {
     panel.classList.toggle('agente--ancho', ancho);
-    if (anchoBtn) anchoBtn.setAttribute('aria-pressed', ancho ? 'true' : 'false');
+    if (anchoBtn) {
+      anchoBtn.setAttribute('aria-pressed', ancho ? 'true' : 'false');
+      const etiqueta = ancho ? 'Volver al ancho normal' : 'Pantalla completa';
+      anchoBtn.title = etiqueta;
+      anchoBtn.setAttribute('aria-label', etiqueta);
+    }
+    try { sessionStorage.setItem('agente-ancho', ancho ? '1' : '0'); } catch (e) { /* nada */ }
     window.dispatchEvent(new Event('resize'));
   }
 
@@ -45,8 +51,6 @@
     pestanasModo.forEach(b => b.setAttribute('aria-selected', b.dataset.modo === modo ? 'true' : 'false'));
     const esServidor = modo === 'servidor';
     if (nuevaBtn) nuevaBtn.hidden = esServidor;
-    if (anchoBtn) anchoBtn.hidden = !esServidor;
-    panel.classList.toggle('agente--servidor', esServidor);
     if (estadoSub) estadoSub.textContent = esServidor ? 'consola del servidor' : 'lee enlaces y propone';
     try { sessionStorage.setItem('agente-modo', modo); } catch (e) { /* nada */ }
     if (!panel.hidden) avisarModo();
@@ -62,6 +66,10 @@
 
   pestanasModo.forEach(b => b.addEventListener('click', () => elegirModo(b.dataset.modo)));
   if (anchoBtn) anchoBtn.addEventListener('click', () => ponerAncho(!panel.classList.contains('agente--ancho')));
+  // Recuerda si el cajón se dejó a pantalla completa (por pestaña del navegador).
+  try {
+    if (sessionStorage.getItem('agente-ancho') === '1') ponerAncho(true);
+  } catch (e) { /* nada */ }
 
   const hilo = document.getElementById('agente-hilo');
   const form = document.getElementById('agente-form');

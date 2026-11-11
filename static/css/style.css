@@ -673,7 +673,7 @@ body.modo-edicion .tarjeta:not(:has(.tarjeta-portada, .tarjeta-mosaico)) .tarjet
 .agente-msg--user { align-items: flex-end; }
 
 .agente-burbuja {
-  max-width: 92%; font-size: .85rem; line-height: 1.55;
+  max-width: min(92%, 78ch); font-size: .85rem; line-height: 1.55;
   padding: var(--e2) var(--e3); border-radius: var(--radio);
   background: var(--fondo); border: 1px solid var(--borde);
   color: var(--texto); overflow-wrap: anywhere;
@@ -1157,8 +1157,9 @@ body.modo-edicion .tarjeta:not(:has(.tarjeta-portada, .tarjeta-mosaico)) .tarjet
 
 /* ---------------------------------------------------------------- accesos
 
-   El cajón del asistente tiene dos accesos según el rol. «Servidor» (solo
-   admin) es una consola: necesita sitio, así que el cajón se ensancha. */
+   El asistente y la consola comparten cajón ancho: así el chat deja ver el
+   portal al lado en escritorio y ocupa la tablet entera. «Pantalla completa»
+   lo lleva al 100%. */
 
 .agente-modos { padding-top: var(--e1); }
 .agente-modos .monitor-pestana { display: inline-flex; align-items: center; gap: 6px; }
@@ -1170,8 +1171,8 @@ body.modo-edicion .tarjeta:not(:has(.tarjeta-portada, .tarjeta-mosaico)) .tarjet
 .agente-modo { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .agente-modo[hidden] { display: none; }
 
-.agente--servidor { width: min(860px, 100%); transition: width .28s var(--muelle); }
-.agente--servidor.agente--ancho { width: 100%; border-left: 0; }
+.agente--chat { width: min(860px, 100%); transition: width .28s var(--muelle); }
+.agente--chat.agente--ancho { width: 100%; border-left: 0; }
 
 .enlace-boton {
   font: inherit; color: var(--acento); background: none; border: 0; padding: 0; cursor: pointer;
@@ -1266,6 +1267,5 @@ body.modo-edicion .tarjeta:not(:has(.tarjeta-portada, .tarjeta-mosaico)) .tarjet
 .consola-pie { background: var(--superficie-alta); padding-top: var(--e2); border-top: 1px solid var(--borde); }
 
 @media (max-width: 720px) {
-  .agente--servidor { width: 100%; }
   .consola-nueva .boton span { display: none; }
 }

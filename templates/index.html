@@ -460,7 +460,7 @@
    Tiene dos accesos según el rol:
      · Enlaces  (editor y admin): el asistente que propone tarjetas.
      · Servidor (solo admin, con 2FA): terminales del servidor, Claude y OpenCode. #}
-<aside class="agente" id="agente" hidden aria-label="Asistente">
+<aside class="agente agente--chat" id="agente" hidden aria-label="Asistente">
   <div class="agente-cabecera">
     <span class="agente-icono">{{ icono('chispa', 15) }}</span>
     <div class="agente-titulo">
@@ -470,9 +470,8 @@
     {% if agente_disponible %}
     <button class="boton-icono" id="agente-nueva" title="Empezar una conversación nueva">{{ icono('mas', 15) }}</button>
     {% endif %}
-    {% if puede_consola %}
-    <button class="boton-icono" id="agente-ancho" title="Ancho completo" aria-pressed="false" hidden>{{ icono('ampliar', 15) }}</button>
-    {% endif %}
+    <button class="boton-icono" id="agente-ancho" title="Pantalla completa"
+            aria-label="Pantalla completa" aria-pressed="false">{{ icono('ampliar', 15) }}</button>
     <button class="boton-icono" id="agente-cerrar" title="Cerrar" aria-label="Cerrar el asistente">{{ icono('cerrar', 15) }}</button>
   </div>
 
