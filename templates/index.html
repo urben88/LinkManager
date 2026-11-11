@@ -19,11 +19,11 @@
   {% if entry.hijos %}
   {# Un grupo se ve como una carpeta: mosaico 2×2 de lo que lleva dentro,
      igual que la previsualización de una carpeta en iOS. #}
-  <div class="tarjeta-mosaico" aria-hidden="true">
+  <div class="tarjeta-mosaico" aria-hidden="true" data-n="{{ entry.hijos[:4] | length }}">
     {% for h in entry.hijos[:4] %}
       {% set mi = url_imagen(h.image_url) %}
       {% if mi %}
-        <span class="mosaico-celda"><img src="{{ mi }}" alt="" loading="lazy" onerror="this.remove();"></span>
+        <span class="mosaico-celda"><img src="{{ mi }}" alt="" loading="lazy" data-si-falla="quitar"></span>
       {% else %}
         <span class="mosaico-celda monograma" style="--tono: {{ tono(h.title) }}">{{ iniciales(h.title) }}</span>
       {% endif %}
@@ -31,13 +31,13 @@
   </div>
   {% elif portada %}
   <div class="tarjeta-portada"><img src="{{ portada }}" alt="" loading="lazy"
-       onerror="this.closest('.tarjeta-portada').remove();"></div>
+       data-si-falla="portada"></div>
   {% endif %}
 
   <div class="tarjeta-cuerpo">
     {% if logo %}
       <span class="tarjeta-logo"><img src="{{ logo }}" alt="" loading="lazy"
-            onerror="this.parentElement.classList.add('monograma');this.parentElement.textContent='{{ iniciales(entry.title) }}';"></span>
+            data-si-falla="monograma" data-iniciales="{{ iniciales(entry.title) }}"></span>
     {% else %}
       <span class="tarjeta-logo monograma" style="--tono: {{ tono(entry.title) }}">{{ iniciales(entry.title) }}</span>
     {% endif %}
@@ -71,8 +71,8 @@
   {% if entry.hijos %}
   <button type="button" class="grupo-pie" aria-expanded="false"
           aria-controls="hijos-{{ entry.id }}" title="Abrir esta carpeta">
-    <span class="grupo-texto">{{ icono('carpeta', 13) }} {{ entry.hijos | length }} enlaces</span>
-    <span class="grupo-flecha">{{ icono('chevron', 15) }}</span>
+    <span class="grupo-texto">{{ icono('carpeta', 13) }} {{ entry.hijos | length }} {{ 'enlace' if entry.hijos | length == 1 else 'enlaces' }}</span>
+    <span class="grupo-abrir">Abrir {{ icono('chevron', 13) }}</span>
   </button>
   {% endif %}
 
@@ -97,6 +97,7 @@
   <title>LinkManager</title>
   <link rel="icon" href="{{ url_for('static', filename='images/icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="{{ url_for('static', filename='js/arranque.js') }}"></script>
 </head>
 
 <body class="vista-portada">
@@ -104,14 +105,18 @@
 <header class="cabecera">
   <div class="cabecera-fila">
     <a class="marca" href="{{ url_for('index') }}">
-      <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager">
+      <picture>
+        <source media="(max-width: 720px)" srcset="{{ url_for('static', filename='images/icon.png') }}">
+        <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager">
+      </picture>
     </a>
 
     {% if sections_with_data %}
     <div class="cabecera-buscador">
       {{ icono('buscar', 15) }}
       <label class="oculto-visualmente" for="buscador">Buscar enlaces</label>
-      <input id="buscador" type="search" placeholder="Buscar…  (pulsa /)" autocomplete="off">
+      <input id="buscador" type="search" placeholder="Buscar…" autocomplete="off" aria-keyshortcuts="/">
+      <kbd class="atajo" aria-hidden="true">/</kbd>
       <span class="contador" id="contador"></span>
     </div>
     {% endif %}
@@ -132,21 +137,21 @@
       <button class="boton-icono" id="abrir-monitor" title="Estado del ordenador"
               aria-controls="monitor" aria-expanded="false">{{ icono('pulso', 16) }}<span class="texto-boton">Monitor</span></button>
       {% endif %}
-      {% if agente_disponible %}
-      <button class="boton-icono" id="abrir-agente" data-abrir-agente title="Asistente: pega enlaces y te los coloca"
+      {% if agente_disponible or puede_consola %}
+      <button class="boton-icono" id="abrir-agente" data-abrir-agente title="Asistente: enlaces{% if puede_consola %} y consola del servidor{% endif %}"
               aria-controls="agente" aria-expanded="false">{{ icono('chispa', 16) }}<span class="texto-boton">Asistente</span></button>
       {% endif %}
       {% endif %}
 
-      <a class="boton-icono" href="{{ url_for('servidor') }}" title="Servicios del servidor">{{ icono('servidor', 16) }}</a>
+      <a class="boton-icono" href="{{ url_for('servidor') }}" title="Servicios del servidor" aria-label="Servicios del servidor">{{ icono('servidor', 16) }}</a>
       <button class="boton-icono" data-abrir="dlg-ajustes" title="Configuración de entornos">{{ icono('ajustes', 16) }}</button>
 
       {% if logueado %}
-      <button class="boton boton--principal" data-abrir="dlg-nueva-entrada">{{ icono('mas', 15) }}<span class="texto-boton">Entrada</span></button>
-      <button class="boton" data-abrir="dlg-nueva-seccion">{{ icono('mas', 15) }}<span class="texto-boton">Sección</span></button>
+      <button class="boton boton--principal" data-abrir="dlg-nueva-entrada" aria-label="Nueva entrada" title="Nueva entrada">{{ icono('mas', 15) }}<span class="texto-boton">Entrada</span></button>
+      <button class="boton" data-abrir="dlg-nueva-seccion" aria-label="Nueva sección" title="Nueva sección">{{ icono('seccion', 15) }}<span class="texto-boton">Sección</span></button>
       <form method="post" action="{{ url_for('logout') }}">
         <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <button class="boton-icono" title="Salir">{{ icono('salir', 16) }}</button>
+        <button class="boton-icono" title="Salir" aria-label="Cerrar sesión">{{ icono('salir', 16) }}</button>
       </form>
       {% else %}
       <a class="boton" href="{{ url_for('login') }}">{{ icono('entrar', 15) }}<span class="texto-boton">Entrar</span></a>
@@ -256,6 +261,25 @@
     </div>
   {% endif %}
 </main>
+
+{# ------------------------------------------------------------ carpeta abierta
+   Una carpeta se abre ENCIMA del portal, como en el móvil: la rejilla no se
+   mueve. El contenido de la carpeta se trae aquí al abrir y vuelve a su sitio
+   al cerrar, así que no hay dos copias de nada. #}
+<div class="carpeta-velo" id="carpeta-velo" hidden>
+  <div class="carpeta-flotante" role="dialog" aria-modal="true" aria-labelledby="carpeta-titulo">
+    <div class="carpeta-cabecera">
+      <span class="carpeta-icono">{{ icono('carpeta', 16) }}</span>
+      <div class="carpeta-titulos">
+        <h2 id="carpeta-titulo"></h2>
+        <p class="carpeta-sub" id="carpeta-sub"></p>
+      </div>
+      <button type="button" class="boton-icono" id="carpeta-cerrar" title="Cerrar (Esc)"
+              aria-label="Cerrar la carpeta">{{ icono('cerrar', 15) }}</button>
+    </div>
+    <div class="carpeta-cuerpo" id="carpeta-cuerpo"></div>
+  </div>
+</div>
 
 {# ------------------------------------------------------------------ diálogos #}
 
@@ -398,13 +422,25 @@
       <span class="agente-sub" id="monitor-sub">leyendo…</span>
     </div>
     <button class="boton-icono" id="monitor-refrescar" title="Actualizar ahora"
-            aria-label="Actualizar ahora">{{ icono('pulso', 15) }}</button>
+            aria-label="Actualizar ahora">{{ icono('refrescar', 15) }}</button>
     <button class="boton-icono" id="monitor-cerrar" title="Cerrar"
             aria-label="Cerrar el monitor">{{ icono('cerrar', 15) }}</button>
   </div>
 
-  <div class="agente-hilo monitor-hilo" id="monitor-hilo" role="status" aria-live="polite">
+  <div class="monitor-pestanas" role="tablist" aria-label="Vistas del monitor">
+    <button type="button" role="tab" class="monitor-pestana" id="pestana-ahora"
+            aria-selected="true" aria-controls="monitor-hilo">Ahora</button>
+    <button type="button" role="tab" class="monitor-pestana" id="pestana-vigilante"
+            aria-selected="false" aria-controls="monitor-vigilante">Cortes y registros<span class="monitor-pestana-aviso" id="pestana-vigilante-aviso" hidden></span></button>
+  </div>
+
+  <div class="agente-hilo monitor-hilo" id="monitor-hilo" role="tabpanel" aria-labelledby="pestana-ahora" aria-live="polite">
     <p class="monitor-espera">Leyendo el estado del servidor…</p>
+  </div>
+
+  {# Cortes de luz, reinicios y los logs del vigilante (~/watchdog), solo lectura #}
+  <div class="agente-hilo monitor-hilo" id="monitor-vigilante" role="tabpanel" aria-labelledby="pestana-vigilante" hidden>
+    <p class="monitor-espera">Leyendo el vigilante…</p>
   </div>
 
   <p class="agente-pie" id="monitor-pie">
@@ -413,27 +449,45 @@
 </aside>
 {% endif %}
 
-{% if logueado and agente_disponible %}
+{% if logueado and (agente_disponible or puede_consola) %}
 {# ------------------------------------------------------------------ asistente
-   Un cajón que entra desde la derecha. Solo aparece con sesión: escribe en la
-   base de datos y lee las webs que le pegues. #}
-<aside class="agente" id="agente" hidden aria-label="Asistente de enlaces">
+   Un cajón que entra desde la derecha. Solo aparece con sesión.
+   Tiene dos accesos según el rol:
+     · Enlaces  (editor y admin): el asistente que propone tarjetas.
+     · Servidor (solo admin, con 2FA): terminales del servidor, Claude y OpenCode. #}
+<aside class="agente" id="agente" hidden aria-label="Asistente">
   <div class="agente-cabecera">
     <span class="agente-icono">{{ icono('chispa', 15) }}</span>
     <div class="agente-titulo">
       <h2>Asistente</h2>
-      <span class="agente-sub" id="agente-estado">lee enlaces y propone</span>
+      <span class="agente-sub" id="agente-estado">{% if agente_disponible %}lee enlaces y propone{% else %}consola del servidor{% endif %}</span>
     </div>
+    {% if agente_disponible %}
     <button class="boton-icono" id="agente-nueva" title="Empezar una conversación nueva">{{ icono('mas', 15) }}</button>
+    {% endif %}
+    {% if puede_consola %}
+    <button class="boton-icono" id="agente-ancho" title="Ancho completo" aria-pressed="false" hidden>{{ icono('ampliar', 15) }}</button>
+    {% endif %}
     <button class="boton-icono" id="agente-cerrar" title="Cerrar" aria-label="Cerrar el asistente">{{ icono('cerrar', 15) }}</button>
   </div>
 
+  {% if agente_disponible and puede_consola %}
+  <div class="monitor-pestanas agente-modos" role="tablist" aria-label="Acceso">
+    <button type="button" role="tab" class="monitor-pestana" data-modo="enlaces"
+            aria-selected="true" aria-controls="modo-enlaces">Enlaces</button>
+    <button type="button" role="tab" class="monitor-pestana" data-modo="servidor"
+            aria-selected="false" aria-controls="modo-servidor">{{ icono('terminal', 13) }} Servidor<span class="rol-chip">admin</span></button>
+  </div>
+  {% endif %}
+
+  {% if agente_disponible %}
+  <div class="agente-modo" id="modo-enlaces" role="tabpanel" data-modo="enlaces">
   <div class="agente-hilo" id="agente-hilo" role="log" aria-live="polite" aria-label="Conversación"></div>
 
   <form class="agente-compositor" id="agente-form" autocomplete="off">
     <label class="oculto-visualmente" for="agente-texto">Mensaje para el asistente</label>
     <textarea id="agente-texto" rows="1" maxlength="8000"
-              placeholder="Pega enlaces o texto suelto y lo organizo…"></textarea>
+              placeholder="Pega enlaces o escribe…"></textarea>
     <button type="submit" class="agente-enviar" id="agente-enviar" title="Enviar (Intro)">
       {{ icono('enviar', 16) }}
     </button>
@@ -441,23 +495,85 @@
   <p class="agente-pie">
     Lee lo que le pases y <strong>propone</strong>; nada se guarda hasta que pulses «Aplicar».
   </p>
+  </div>
+  {% endif %}
+
+  {% if puede_consola %}
+  {# ---- acceso «Servidor»: terminales reales del host (como urben) #}
+  <div class="agente-modo consola" id="modo-servidor" role="tabpanel" data-modo="servidor" {% if agente_disponible %}hidden{% endif %}>
+    <div class="consola-cerrojo" id="consola-cerrojo" hidden>
+      <div class="consola-cerrojo-caja">
+        <span class="consola-candado">{{ icono('candado', 22) }}</span>
+        <h3>Consola del servidor</h3>
+        <p id="consola-cerrojo-texto">Da acceso a una terminal real del servidor. Para abrirla, escribe el código de tu app de autenticación.</p>
+        <form id="consola-desbloquear" autocomplete="off">
+          <label class="oculto-visualmente" for="consola-codigo">Código de 6 cifras</label>
+          <input id="consola-codigo" type="text" inputmode="numeric" maxlength="7"
+                 autocomplete="one-time-code" placeholder="000000">
+          <button type="submit" class="boton boton--principal">Desbloquear</button>
+        </form>
+        <p class="consola-error" id="consola-cerrojo-error" role="alert" hidden></p>
+        <div class="consola-sin2fa" id="consola-sin2fa" hidden>
+          <p>Tu usuario no tiene la verificación en dos pasos activada, y sin ella la consola no se abre. Actívala <strong>desde el propio servidor</strong>:</p>
+          <pre>docker exec -it linkmanager_web python3 /app/tools/usuarios.py 2fa {{ usuario_actual }}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="consola-trabajo" id="consola-trabajo" hidden>
+      <div class="consola-barra">
+        <div class="consola-pestanas" id="consola-pestanas" role="tablist" aria-label="Terminales abiertas"></div>
+        <div class="consola-nueva">
+          <button type="button" class="boton" data-lanzar="shell" title="Nueva terminal (bash)">{{ icono('terminal', 14) }}<span>Terminal</span></button>
+          <button type="button" class="boton" data-lanzar="claude" title="Abrir Claude Code">{{ icono('chispa', 14) }}<span>Claude</span></button>
+          <button type="button" class="boton" data-lanzar="opencode" title="Abrir OpenCode">{{ icono('codigo', 14) }}<span>OpenCode</span></button>
+        </div>
+      </div>
+      <div class="consola-carpeta">
+        <label for="consola-carpeta">Carpeta</label>
+        <input id="consola-carpeta" type="text" value="~/docker" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="consola-pantalla" id="consola-pantalla">
+        <div class="consola-vacia" id="consola-vacia">
+          <p><strong>Ninguna terminal abierta.</strong></p>
+          <p>Abre una con los botones de arriba. Las terminales siguen vivas aunque cierres esta pestaña: Claude u OpenCode pueden seguir trabajando y al volver lo verás donde lo dejaste.</p>
+        </div>
+      </div>
+      <p class="agente-pie consola-pie">
+        <span id="consola-hasta">—</span> ·
+        <button type="button" class="enlace-boton" id="consola-bloquear">Bloquear ahora</button> ·
+        <button type="button" class="enlace-boton" id="consola-otras">Cerrar mis otras sesiones</button>
+      </p>
+    </div>
+    <p class="consola-error consola-error--global" id="consola-error" role="alert" hidden></p>
+  </div>
+  {% endif %}
 </aside>
 {% endif %}
 
-<script>
-  window.APP_DOMAINS = {{ app_domains | tojson | safe }};
-  window.LOGUEADO    = {{ 'true' if logueado else 'false' }};
-  window.CSRF        = {{ csrf_token() | tojson | safe }};
-  window.AGENTE      = {{ 'true' if (logueado and agente_disponible) else 'false' }};
-  window.MONITOR     = {{ 'true' if (logueado and monitor_disponible) else 'false' }};
-</script>
+{# Datos para el JavaScript. Es JSON, no código: la CSP no deja ejecutar
+   scripts en línea, y script.js los lee de aquí. #}
+<script type="application/json" id="datos-portal">{{ {
+  'APP_DOMAINS': app_domains,
+  'LOGUEADO': logueado,
+  'CSRF': csrf_token(),
+  'AGENTE': true if (logueado and agente_disponible) else false,
+  'MONITOR': true if (logueado and monitor_disponible) else false,
+  'CONSOLA': true if puede_consola else false,
+} | tojson }}</script>
 <script src="{{ url_for('static', filename='vendor/sortable.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 {% if logueado and monitor_disponible %}
 <script src="{{ url_for('static', filename='js/monitor.js') }}"></script>
 {% endif %}
-{% if logueado and agente_disponible %}
+{% if logueado and (agente_disponible or puede_consola) %}
 <script src="{{ url_for('static', filename='js/agente.js') }}"></script>
+{% endif %}
+{% if puede_consola %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm/xterm.css') }}">
+<script src="{{ url_for('static', filename='vendor/xterm/xterm.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/xterm/addon-fit.js') }}"></script>
+<script src="{{ url_for('static', filename='js/consola.js') }}"></script>
 {% endif %}
 </body>
 </html>

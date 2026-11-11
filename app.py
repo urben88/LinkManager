@@ -15,6 +15,14 @@ Reescritura (2026-10-15) con estas mejoras respecto a la versión original:
   · SUBIDAS: se guardaban en /app/static/uploads, FUERA del volumen → se perdían
     al recrear el contenedor. Ahora van a la carpeta persistente y se comprueba
     el contenido real del fichero, no solo la extensión.
+
+Y desde 2026-11-11, con la consola del servidor:
+
+  · USUARIOS Y ROLES en la base (seguridad.py): `editor` y `admin`.
+  · SESIONES EN EL SERVIDOR, de 30 días, revocables.
+  · 2FA (TOTP) en el login y para desbloquear la consola.
+  · LÍMITES DE INTENTOS compartidos entre workers, por IP real y por usuario.
+  · CSP sin JavaScript en línea, HSTS y cookie Secure detrás de HTTPS.
 """
 
 import hmac
@@ -31,10 +39,26 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+import re
+from datetime import timedelta
+
 from flask import (Flask, abort, flash, g, jsonify, redirect, render_template,
                    request, send_from_directory, session, url_for)
-from werkzeug.security import check_password_hash, generate_password_hash
+from flask.sessions import SecureCookieSessionInterface
+from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
+
+import seguridad
+
+# La consola del servidor necesita websockets (flask-sock). Igual que el
+# asistente: si falta algo, el portal arranca y la consola no aparece.
+try:
+    from flask_sock import Sock
+    import consola
+except Exception as _exc_consola:  # noqa: BLE001
+    Sock = None
+    consola = None
+    print(f"[linkmanager] consola desactivada: {_exc_consola}")
 
 # El asistente es opcional: si langchain no está instalado o la clave falta, el
 # portal tiene que arrancar igual. Nunca un import que tumbe la aplicación.
@@ -52,9 +76,74 @@ except Exception as _exc_monitor:  # noqa: BLE001
     monitor = None
     print(f"[linkmanager] monitor desactivado: {_exc_monitor}")
 
+# El vigilante (~/watchdog) da los cortes de luz y los registros. Va dentro del
+# panel del monitor, en su propia pestaña; si falta, la pestaña lo dice.
+try:
+    import vigilante
+except Exception as _exc_vigilante:  # noqa: BLE001
+    vigilante = None
+    print(f"[linkmanager] vigilante desactivado: {_exc_vigilante}")
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
+
+
+# --------------------------------------------------------------------------
+#  IP real y esquema detrás de Nginx Proxy Manager
+#
+#  Solo se cree a X-Real-IP / X-Forwarded-Proto si la petición llega DESDE el
+#  contenedor del proxy (se resuelve por nombre en la red docker). Cualquier
+#  otro (p. ej. alguien de la LAN entrando por el puerto 32768) no puede
+#  inventarse su IP para saltarse el límite de intentos.
+# --------------------------------------------------------------------------
+
+PROXIES = [p.strip() for p in os.environ.get("LINKMANAGER_PROXIES", "nginx-proxy-manager").split(",") if p.strip()]
+_proxies_cache = {"ips": set(), "ts": 0.0}
+
+
+def _ips_proxy():
+    if time.time() - _proxies_cache["ts"] > 300:
+        ips = set()
+        for nombre in PROXIES:
+            try:
+                ips.update(i[4][0] for i in socket.getaddrinfo(nombre, None))
+            except OSError:
+                pass
+        _proxies_cache.update(ips=ips, ts=time.time())
+    return _proxies_cache["ips"]
+
+
+class DetrasDelProxy:
+    def __init__(self, wsgi):
+        self.wsgi = wsgi
+
+    def __call__(self, environ, start_response):
+        if environ.get("REMOTE_ADDR") in _ips_proxy():
+            real = (environ.get("HTTP_X_REAL_IP") or "").strip()
+            try:
+                ipaddress.ip_address(real)
+                environ["REMOTE_ADDR"] = real
+            except ValueError:
+                pass
+            proto = (environ.get("HTTP_X_FORWARDED_PROTO") or "").strip().lower()
+            if proto in ("http", "https"):
+                environ["wsgi.url_scheme"] = proto
+        return self.wsgi(environ, start_response)
+
+
+app.wsgi_app = DetrasDelProxy(app.wsgi_app)
+
+
+class SesionCookie(SecureCookieSessionInterface):
+    """Cookie `Secure` cuando se entra por HTTPS (el dominio público), normal
+    cuando se entra por http en la LAN. Un ajuste fijo rompería uno de los dos."""
+
+    def get_cookie_secure(self, app_):
+        return request.is_secure or super().get_cookie_secure(app_)
+
+
+app.session_interface = SesionCookie()
 
 # --------------------------------------------------------------------------
 #  Configuración y secreto
@@ -72,7 +161,6 @@ PRIVADO = os.environ.get("LINKMANAGER_PRIVATE", "0").strip().lower() in ("1", "t
 USUARIO = os.environ.get("LINKMANAGER_USER", "admin").strip()
 METADATOS_ACTIVOS = os.environ.get("LINKMANAGER_METADATA", "1").strip().lower() not in ("0", "false", "no")
 CATALOGO = os.environ.get("CATALOGO_JSON", "/app/servicios.json")
-MAX_REINTENTOS_LOGIN = 8
 
 
 def _cargar_secreto():
@@ -124,9 +212,13 @@ app.secret_key = _cargar_secreto()
 CLAVE_HASH = _cargar_clave()
 
 app.config.update(
+    SESSION_COOKIE_NAME="linkmanager",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("LINKMANAGER_COOKIE_SECURE", "0") == "1",
+    # La cookie dura lo mismo que la sesión del servidor; quien decide si vale
+    # es la tabla `sesiones` (caducidad, inactividad, revocación).
+    PERMANENT_SESSION_LIFETIME=timedelta(days=seguridad.SESION_DIAS),
     MAX_CONTENT_LENGTH=int(os.environ.get("LINKMANAGER_MAX_UPLOAD_MB", "8")) * 1024 * 1024,
 )
 
@@ -171,11 +263,42 @@ def init_db():
 #  Autenticación y CSRF
 # --------------------------------------------------------------------------
 
-_intentos = {}
+def ip_cliente() -> str:
+    return request.remote_addr or "?"
+
+
+def sesion_actual():
+    """La fila de `sesiones` (+ usuario) de esta petición, o None. Una consulta por petición."""
+    if "sesion_actual" not in g:
+        fila = None
+        sid = session.get("sid")
+        if sid:
+            fila = seguridad.leer_sesion(get_db(), sid, ip_cliente())
+            if fila is None:
+                # caducada, revocada o usuario desactivado: fuera de la cookie
+                for clave in ("sid", "usuario"):
+                    session.pop(clave, None)
+        g.sesion_actual = fila
+    return g.sesion_actual
 
 
 def logueado() -> bool:
-    return bool(session.get("usuario"))
+    return sesion_actual() is not None
+
+
+def es_admin() -> bool:
+    s = sesion_actual()
+    return bool(s and s["rol"] == "admin")
+
+
+def _destino_seguro(destino: str) -> str:
+    """Solo rutas del propio portal: «//otro.com» o «/\\otro.com» serían una
+    redirección abierta."""
+    destino = destino or ""
+    if (not destino.startswith("/") or destino.startswith("//")
+            or destino.startswith("/\\") or "\\" in destino[:3]):
+        return url_for("index")
+    return destino
 
 
 def login_required(vista):
@@ -184,6 +307,17 @@ def login_required(vista):
         if not logueado():
             # full_path añade un '?' suelto cuando no hay query string
             return redirect(url_for("login", next=request.full_path.rstrip("?")))
+        return vista(*args, **kwargs)
+    return envoltorio
+
+
+def admin_required(vista):
+    @wraps(vista)
+    def envoltorio(*args, **kwargs):
+        if not logueado():
+            return redirect(url_for("login", next=request.full_path.rstrip("?")))
+        if not es_admin():
+            abort(403)
         return vista(*args, **kwargs)
     return envoltorio
 
@@ -205,6 +339,9 @@ def _csrf_valido() -> bool:
 
 @app.before_request
 def _guardia():
+    # 0) El websocket de la consola se comprueba ANTES del apretón de manos.
+    if request.path.startswith("/consola/ws/"):
+        return _guardia_websocket()
     # 1) Todo POST necesita token CSRF (incluido /login).
     if request.method == "POST" and not _csrf_valido():
         abort(400, "Token CSRF ausente o inválido. Recarga la página e inténtalo de nuevo.")
@@ -215,21 +352,52 @@ def _guardia():
             return redirect(url_for("login", next=request.path))
 
 
+def _csp() -> str:
+    """Sin JavaScript en línea: si algún día se cuela HTML ajeno en una
+    tarjeta, no podrá ejecutar nada (y detrás hay una consola)."""
+    host = request.host
+    return "; ".join([
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: https: http:",
+        "font-src 'self' data:",
+        f"connect-src 'self' wss://{host} ws://{host}",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'self'",
+    ])
+
+
 @app.after_request
 def _cabeceras(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("Content-Security-Policy", _csp())
+    resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.is_secure:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     # El hilo del asistente lleva notas y enlaces privados: ni caché ni índice.
-    if request.path.startswith(("/agente", "/monitor")):
+    # La consola y el login, igual.
+    if request.path.startswith(("/agente", "/monitor", "/consola", "/login", "/cuenta")):
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Robots-Tag"] = "noindex, nofollow"
     return resp
 
 
+def consola_disponible() -> bool:
+    return bool(consola is not None and consola.activa())
+
+
 @app.context_processor
 def _inyectar():
-    return {"logueado": logueado(), "csrf_token": csrf_token, "privado": PRIVADO,
+    s = sesion_actual()
+    return {"logueado": s is not None, "csrf_token": csrf_token, "privado": PRIVADO,
+            "usuario_actual": s["nombre"] if s else None,
+            "rol_actual": s["rol"] if s else None,
+            "puede_consola": bool(s and s["rol"] == "admin" and consola_disponible()),
             "agente_disponible": bool(agente is not None and agente.disponible()),
             "monitor_disponible": bool(monitor is not None and monitor.activo())}
 
@@ -266,41 +434,103 @@ def etiqueta_enlace(link_type: str, valor: str) -> str:
 app.jinja_env.globals["etiqueta_enlace"] = etiqueta_enlace
 
 
+PENDIENTE_2FA_SEGUNDOS = 300
+
+
+def _abrir_sesion(usuario, destino, con_2fa):
+    """Sesión nueva (identificador nuevo: nada de fijación de sesión)."""
+    db = get_db()
+    session.clear()
+    session.permanent = True
+    sid = seguridad.crear_sesion(db, usuario["id"], ip_cliente(), request.headers.get("User-Agent"))
+    session["sid"] = sid
+    session["usuario"] = usuario["nombre"]
+    csrf_token()
+    # Si acaba de poner el código de 2FA, la consola queda desbloqueada sin
+    # pedírselo otra vez: lo volverá a pedir pasadas CONSOLA_DESBLOQUEO_HORAS.
+    if con_2fa and usuario["rol"] == "admin":
+        seguridad.desbloquear_consola(db, seguridad._h(sid))
+    seguridad.registrar(db, ip_cliente(), usuario["nombre"], "sesion", True,
+                        "con 2FA" if con_2fa else "solo contraseña")
+    return redirect(_destino_seguro(destino))
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        ip = request.remote_addr or "?"
-        ahora = time.time()
-        intentos = [t for t in _intentos.get(ip, []) if ahora - t < 300]
-        if len(intentos) >= MAX_REINTENTOS_LOGIN:
-            flash("Demasiados intentos fallidos. Espera unos minutos.", "error")
-            _intentos[ip] = intentos
-            return render_template("login.html", next=request.args.get("next", "")), 429
+    db = get_db()
+    ip = ip_cliente()
+    pendiente = session.get("pendiente_2fa")
+    if pendiente and time.time() - pendiente.get("ts", 0) > PENDIENTE_2FA_SEGUNDOS:
+        session.pop("pendiente_2fa", None)
+        pendiente = None
+    siguiente = request.args.get("next", "")
 
-        usuario = request.form.get("usuario", "").strip()
-        clave = request.form.get("clave", "")
-        if usuario == USUARIO and check_password_hash(CLAVE_HASH, clave):
-            session.clear()
-            session["usuario"] = usuario
-            csrf_token()
-            _intentos.pop(ip, None)
-            destino = request.args.get("next") or ""
-            if not destino.startswith("/"):
-                destino = url_for("index")
-            return redirect(destino)
+    if request.method == "GET":
+        if logueado():
+            return redirect(_destino_seguro(siguiente))
+        # Volver a cargar /login empieza de cero.
+        session.pop("pendiente_2fa", None)
+        return render_template("login.html", next=siguiente, paso="clave")
 
-        intentos.append(ahora)
-        _intentos[ip] = intentos
+    if seguridad.bloqueado_ip(db, ip):
+        flash("Demasiados intentos fallidos desde esta conexión. Espera 15 minutos.", "error")
+        return render_template("login.html", next=siguiente, paso="clave"), 429
+
+    # ---- segundo paso: código de la app de autenticación
+    if request.form.get("paso") == "codigo":
+        if not pendiente:
+            flash("Ha pasado demasiado tiempo. Vuelve a poner la contraseña.", "error")
+            return redirect(url_for("login", next=siguiente))
+        nombre = pendiente["usuario"]
+        usuario = seguridad.usuario_por_nombre(db, nombre)
+        if not usuario or not usuario["activo"]:
+            session.pop("pendiente_2fa", None)
+            return redirect(url_for("login"))
+        if seguridad.bloqueado_2fa(db, nombre):
+            flash("Demasiados códigos incorrectos. Espera 15 minutos.", "error")
+            return render_template("login.html", next=pendiente.get("next", ""), paso="codigo", usuario=nombre), 429
+        if seguridad.verificar_totp(db, usuario, request.form.get("codigo", "")):
+            seguridad.registrar(db, ip, nombre, "2fa", True)
+            return _abrir_sesion(usuario, pendiente.get("next", ""), con_2fa=True)
+        seguridad.registrar(db, ip, nombre, "2fa", False)
+        time.sleep(0.4)
+        flash("Código incorrecto o ya usado. Espera al siguiente y prueba otra vez.", "error")
+        return render_template("login.html", next=pendiente.get("next", ""), paso="codigo", usuario=nombre)
+
+    # ---- primer paso: usuario y contraseña
+    nombre = request.form.get("usuario", "").strip()[:64]
+    usuario = seguridad.comprobar_clave(db, nombre, request.form.get("clave", ""))
+    if usuario is None:
+        seguridad.registrar(db, ip, nombre, "login", False)
         time.sleep(0.4)  # freno a la fuerza bruta
         flash("Usuario o contraseña incorrectos.", "error")
+        return render_template("login.html", next=siguiente, paso="clave", usuario=nombre)
 
-    return render_template("login.html", next=request.args.get("next", ""))
+    if usuario["totp"]:
+        seguridad.registrar(db, ip, nombre, "login", True, "falta el código")
+        session.clear()
+        session["pendiente_2fa"] = {"usuario": nombre, "ts": time.time(), "next": siguiente}
+        csrf_token()
+        return render_template("login.html", next=siguiente, paso="codigo", usuario=nombre)
+
+    seguridad.registrar(db, ip, nombre, "login", True)
+    return _abrir_sesion(usuario, siguiente, con_2fa=False)
 
 
 @app.route("/logout", methods=["POST"])
 def logout():
+    seguridad.cerrar_sesion(get_db(), session.get("sid"))
     session.clear()
     return redirect(url_for("index"))
+
+
+@app.route("/cuenta/cerrar-otras", methods=["POST"])
+@login_required
+def cerrar_otras_sesiones():
+    s = sesion_actual()
+    n = seguridad.cerrar_sesiones_usuario(get_db(), s["usuario_id"], excepto_sid=session.get("sid"))
+    seguridad.registrar(get_db(), ip_cliente(), s["nombre"], "cerrar-otras", True, f"{n} sesiones")
+    return jsonify({"ok": True, "cerradas": n})
 
 
 @app.route("/salud")
@@ -941,6 +1171,200 @@ def monitor_datos():
     return jsonify(monitor.datos())
 
 
+@app.route("/monitor/vigilante")
+@login_required
+def monitor_vigilante():
+    if vigilante is None or not vigilante.activo():
+        return jsonify({"disponible": False,
+                        "motivo": "El vigilante está desactivado en este portal."}), 503
+    return jsonify(vigilante.datos())
+
+
+@app.route("/monitor/registro/<clave>")
+@login_required
+def monitor_registro(clave):
+    if vigilante is None or not vigilante.activo():
+        return jsonify({"disponible": False,
+                        "motivo": "El vigilante está desactivado en este portal."}), 503
+    try:
+        lineas = int(request.args.get("lineas", 80))
+    except ValueError:
+        lineas = 80
+    return jsonify(vigilante.registro(clave, lineas))
+
+
+# --------------------------------------------------------------------------
+#  Consola del servidor — solo admin, con 2FA reciente
+#
+#  Capas, de fuera a dentro:
+#    1. sesión válida en la tabla `sesiones` (no basta la cookie)
+#    2. rol `admin`
+#    3. 2FA activado y verificado hace menos de CONSOLA_DESBLOQUEO_HORAS
+#    4. CSRF en los POST; en el websocket, Origin del propio portal y un
+#       ticket de un solo uso (30 s) atado a esa sesión y a ese terminal
+#    5. el puente del host comprueba la firma HMAC de cada petición
+#  Todo queda en `accesos`.
+# --------------------------------------------------------------------------
+
+ID_TERMINAL = re.compile(r"^[0-9a-f]{12}$")
+sock = Sock(app) if (Sock is not None and consola is not None) else None
+
+
+def _consola_no_disponible():
+    return jsonify({"ok": False, "error": "La consola está desactivada en este portal."}), 503
+
+
+def _consola_desbloqueada(s) -> bool:
+    return bool(s and s["rol"] == "admin" and s["totp"] and s["consola_hasta"] > time.time())
+
+
+def _consola_previa():
+    """Comprobación común de las rutas JSON. None si se puede seguir."""
+    if not consola_disponible():
+        return _consola_no_disponible()
+    if not _consola_desbloqueada(sesion_actual()):
+        return jsonify({"ok": False, "bloqueada": True,
+                        "error": "La consola está bloqueada. Pon el código de tu app de autenticación."}), 403
+    return None
+
+
+@app.route("/consola/estado")
+@admin_required
+def consola_estado():
+    if not consola_disponible():
+        return _consola_no_disponible()
+    s = sesion_actual()
+    datos = {"ok": True, "usuario": s["nombre"], "tiene_2fa": bool(s["totp"]),
+             "desbloqueada": _consola_desbloqueada(s),
+             "hasta": s["consola_hasta"] if _consola_desbloqueada(s) else 0,
+             "horas": seguridad.CONSOLA_HORAS}
+    if datos["desbloqueada"]:
+        lista = consola.pedir({"op": "listar", "usuario": s["nombre"]})
+        datos["puente"] = bool(lista.get("ok"))
+        datos["terminales"] = lista.get("terminales", [])
+        datos["programas"] = lista.get("programas", {})
+        if not lista.get("ok"):
+            datos["error"] = lista.get("error")
+    return jsonify(datos)
+
+
+@app.route("/consola/desbloquear", methods=["POST"])
+@admin_required
+def consola_desbloquear():
+    if not consola_disponible():
+        return _consola_no_disponible()
+    db = get_db()
+    s = sesion_actual()
+    usuario = seguridad.usuario_por_nombre(db, s["nombre"])
+    if not usuario["totp"]:
+        return jsonify({"ok": False, "error": "Primero activa la verificación en dos pasos (ver abajo)."}), 403
+    if seguridad.bloqueado_ip(db, ip_cliente()) or seguridad.bloqueado_2fa(db, s["nombre"]):
+        return jsonify({"ok": False, "error": "Demasiados códigos incorrectos. Espera 15 minutos."}), 429
+    codigo = (request.get_json(silent=True) or {}).get("codigo", "")
+    if not seguridad.verificar_totp(db, usuario, codigo):
+        seguridad.registrar(db, ip_cliente(), s["nombre"], "consola", False, "código incorrecto")
+        time.sleep(0.4)
+        return jsonify({"ok": False, "error": "Código incorrecto o ya usado."}), 400
+    hasta = seguridad.desbloquear_consola(db, s["sid_hash"])
+    seguridad.registrar(db, ip_cliente(), s["nombre"], "consola", True, "desbloqueada")
+    return jsonify({"ok": True, "hasta": hasta})
+
+
+@app.route("/consola/bloquear", methods=["POST"])
+@admin_required
+def consola_bloquear():
+    s = sesion_actual()
+    seguridad.bloquear_consola(get_db(), s["sid_hash"])
+    seguridad.registrar(get_db(), ip_cliente(), s["nombre"], "consola", True, "bloqueada a mano")
+    return jsonify({"ok": True})
+
+
+@app.route("/consola/terminales", methods=["POST"])
+@admin_required
+def consola_crear():
+    previa = _consola_previa()
+    if previa is not None:
+        return previa
+    s = sesion_actual()
+    datos = request.get_json(silent=True) or {}
+    tipo = str(datos.get("tipo", "shell"))
+    carpeta = str(datos.get("carpeta") or "~")[:300]
+    r = consola.pedir({"op": "crear", "usuario": s["nombre"], "tipo": tipo, "carpeta": carpeta,
+                       "cols": datos.get("cols", 100), "rows": datos.get("rows", 30)})
+    seguridad.registrar(get_db(), ip_cliente(), s["nombre"], "terminal", bool(r.get("ok")),
+                        f"crear {tipo} en {carpeta}")
+    return jsonify(r), (200 if r.get("ok") else 400)
+
+
+@app.route("/consola/terminales/<terminal_id>/cerrar", methods=["POST"])
+@admin_required
+def consola_cerrar(terminal_id):
+    previa = _consola_previa()
+    if previa is not None:
+        return previa
+    if not ID_TERMINAL.match(terminal_id):
+        abort(404)
+    s = sesion_actual()
+    r = consola.pedir({"op": "cerrar", "usuario": s["nombre"], "id": terminal_id})
+    seguridad.registrar(get_db(), ip_cliente(), s["nombre"], "terminal", bool(r.get("ok")),
+                        f"cerrar {terminal_id}")
+    return jsonify(r), (200 if r.get("ok") else 400)
+
+
+@app.route("/consola/terminales/<terminal_id>/ticket", methods=["POST"])
+@admin_required
+def consola_ticket(terminal_id):
+    previa = _consola_previa()
+    if previa is not None:
+        return previa
+    if not ID_TERMINAL.match(terminal_id):
+        abort(404)
+    ticket = seguridad.emitir_ticket(get_db(), sesion_actual()["sid_hash"], terminal_id)
+    return jsonify({"ok": True, "ticket": ticket})
+
+
+def _guardia_websocket():
+    """Todo lo del websocket se decide aquí, antes de aceptar la conexión."""
+    if not consola_disponible():
+        abort(503)
+    origen = request.headers.get("Origin", "")
+    if origen != f"{request.scheme}://{request.host}":
+        abort(403)
+    s = sesion_actual()
+    if not _consola_desbloqueada(s):
+        abort(403)
+    terminal_id = request.path.rsplit("/", 1)[-1]
+    if not ID_TERMINAL.match(terminal_id):
+        abort(404)
+    if not seguridad.canjear_ticket(get_db(), request.args.get("ticket", ""), s["sid_hash"], terminal_id):
+        abort(403)
+    g.consola_usuario = s["nombre"]
+    g.consola_sid = session.get("sid")
+    seguridad.registrar(get_db(), ip_cliente(), s["nombre"], "terminal", True, f"conectar {terminal_id}")
+    return None
+
+
+if sock is not None:
+    @sock.route("/consola/ws/<terminal_id>")
+    def consola_ws(ws, terminal_id):
+        usuario, sid = g.consola_usuario, g.consola_sid
+        try:
+            cols = int(request.args.get("cols", 100))
+            rows = int(request.args.get("rows", 30))
+        except ValueError:
+            cols, rows = 100, 30
+
+        def sigue_valida():
+            # Conexión propia: el websocket vive más que la petición.
+            con = seguridad.conectar(DATABASE)
+            try:
+                return _consola_desbloqueada(seguridad.leer_sesion(con, sid))
+            finally:
+                con.close()
+
+        consola.rele(ws, terminal_id, usuario, cols, rows, sigue_valida)
+
+
 # --------------------------------------------------------------------------
 #  Arranque
 # --------------------------------------------------------------------------
@@ -1000,6 +1424,9 @@ def check_and_create_db():
         print(f"[linkmanager] base de datos no encontrada en {DATABASE}; creando…")
         init_db()
     _migrar_columnas()
+    seguridad.preparar(DATABASE, USUARIO, CLAVE_HASH,
+                       clave_entorno=os.environ.get("LINKMANAGER_PASSWORD"),
+                       hash_entorno=os.environ.get("LINKMANAGER_PASSWORD_HASH"))
     if agente is not None:
         try:
             agente.preparar(DATABASE)

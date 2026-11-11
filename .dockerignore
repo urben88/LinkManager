@@ -1,8 +1,14 @@
 # Herramientas de diseño: no van dentro de la imagen de producción
 ai-frontend-guide-kit/
 ai-frontend-output/
+.agents/
+AGENTS.md
+CLAUDE.md
 node_modules/
 .git/
 __pycache__/
 *.pyc
 README.md
+
+# El puente de la consola corre en el host, no en la imagen
+consola-puente/

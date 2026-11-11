@@ -10,3 +10,8 @@ gunicorn>=20.0  # Si planeas usar Gunicorn para producción (ej. con Docker)
 # botón del asistente simplemente no aparece.
 langchain>=0.3.7,<0.4
 langchain-openai>=0.2.9,<0.4
+# ---------------------------------------------------------------- consola
+# Websockets para la consola del servidor (funciona con gunicorn --threads)
+flask-sock>=0.7,<0.8
+# QR del 2FA en la terminal (tools/usuarios.py). Python puro, sin dependencias.
+segno>=1.6,<2

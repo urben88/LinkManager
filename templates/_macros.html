@@ -3,6 +3,7 @@
 
 {% macro icono(nombre, tam=16) -%}
 {%- set trazos = {
+  'refrescar': '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
   'buscar':   '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
   'lista':    '<path d="M3 6h18M3 12h18M3 18h18"/>',
   'rejilla':  '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -13,6 +14,8 @@
   'salir':    '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
   'entrar':   '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>',
   'chevron':  '<path d="m6 9 6 6 6-6"/>',
+  'volver':   '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
+  'seccion':  '<path d="M3 6h13"/><path d="M3 12h9"/><path d="M3 18h9"/><path d="M18 12v6"/><path d="M15 15h6"/>',
   'papelera': '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
   'asa':      '<circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/>',
   'externo':  '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/>',
@@ -24,6 +27,10 @@
   'chispa':   '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>',
   'pulso':    '<path d="M3 12h4l2-6 4 12 2.5-6H21"/>',
   'enviar':   '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/>',
+  'terminal': '<path d="m4 17 6-5-6-5"/><path d="M12 19h8"/>',
+  'codigo':   '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+  'candado':  '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  'ampliar':  '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
 } -%}
 <svg width="{{ tam }}" height="{{ tam }}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ trazos.get(nombre, '') | safe }}</svg>

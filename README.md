@@ -9,23 +9,77 @@ Consta de dos vistas:
 | Tablero de enlaces | `/` | Cualquiera (leer). Editar exige sesión. |
 | Servicios del servidor | `/servidor` | Solo con sesión (expone puertos y rutas internas) |
 
-## Acceso
+## Acceso, roles y seguridad del login
 
-La edición y `/servidor` piden usuario y contraseña.
+| Rol | Qué puede hacer |
+|---|---|
+| `editor` | Editar enlaces, asistente de enlaces, monitor, `/servidor` |
+| `admin` | Todo lo anterior + **consola del servidor** (exige 2FA) |
 
-- **Usuario:** `admin` (configurable con `LINKMANAGER_USER`)
-- **Contraseña:** se genera sola la primera vez y queda en
-  `~/docker/stacks/apps/linkmanager/ADMIN_PASSWORD.txt` (permisos 600).
-  Dentro del contenedor está en `/app/database/ADMIN_PASSWORD.txt`.
+- **Usuarios en la base** (`usuarios`). El primero (`admin`) se crea solo con la
+  contraseña de `ADMIN_PASSWORD.txt` (o `LINKMANAGER_PASSWORD` si está en el `.env`;
+  en ese caso el `.env` manda en cada arranque).
+- **Sesiones de 30 días** guardadas en el servidor (`sesiones`): caducan antes si
+  pasan 7 días sin uso, y se pueden cerrar desde otro sitio (CLI o «Cerrar mis
+  otras sesiones»). Salir invalida la sesión de verdad, no solo la cookie.
+- **2FA (TOTP)**: con él activado, el login pide el código de la app. Un código no
+  vale dos veces. Se activa **solo desde el servidor**, nunca desde la web.
+- **Límites** en SQLite (compartidos por los workers): 10 fallos por IP cada
+  15 min, y 5 códigos de 2FA malos por usuario cada 15 min (desde cualquier IP).
+- **IP real**: solo se cree a `X-Real-IP` si la petición viene del contenedor de
+  Nginx Proxy Manager. Cookie `Secure` cuando se entra por HTTPS, HSTS y una CSP
+  sin JavaScript en línea.
+- **Registro** de logins, fallos y uso de la consola en `accesos`.
 
-Para cambiarla, crea un `.env` junto al `compose.yaml` con:
+Gestión, siempre desde el servidor:
+
+```bash
+U="docker exec -it linkmanager_web python3 /app/tools/usuarios.py"
+$U listar
+$U 2fa admin              # QR para la app de códigos (Aegis, Google Authenticator…)
+$U crear maria --rol editor
+$U clave admin            # cambia la contraseña y cierra sus sesiones
+$U sesiones               # quién tiene sesión abierta, desde dónde
+$U cerrar-sesiones admin  # echa a todo el mundo de esa cuenta
+$U registro 50            # últimos accesos
+```
+
+## La consola del servidor
+
+En el cajón del **Asistente**, los `admin` ven una segunda pestaña, **Servidor**:
+terminales reales del servidor como el usuario `urben`, con botones para abrir
+una **Terminal** (bash), **Claude** (Claude Code) u **OpenCode**. El cajón se
+ensancha y puede ocupar toda la pantalla.
+
+- Pide el código de 2FA para desbloquearse y lo vuelve a pedir cada
+  `CONSOLA_DESBLOQUEO_HORAS` (8). Entrar con 2FA ya la deja desbloqueada.
+- Las terminales **viven en el servidor**: cerrar la pestaña o perder la conexión
+  no las mata; al volver se reengancha con lo último que salió por pantalla.
+- `urben` tiene `sudo` y `docker`: **la consola equivale a root**. Por eso todas
+  las capas: sesión en servidor → rol admin → 2FA reciente → CSRF → Origin del
+  propio portal + ticket de un solo uso (30 s) para el websocket → firma HMAC
+  hacia el puente.
+
+Cómo está montado:
 
 ```
-LINKMANAGER_PASSWORD=tu-contraseña
+navegador ──wss──▶ NPM ──▶ linkmanager_web (flask-sock, relé)
+                               │  socket UNIX montado + HMAC
+                               ▼
+                 consola-puente (host, systemd --user, como urben)
+                               └─ pty: bash -l / claude / opencode
 ```
 
-y ejecuta `docker compose up -d --force-recreate` desde
-`~/docker/stacks/apps/linkmanager`.
+`consola-puente/` (fuera de la imagen) tiene el servicio. Instalar o actualizar:
+
+```bash
+~/Escritorio/apps/LinkManager/consola-puente/instalar.sh
+```
+
+Crea el socket en `~/.local/share/consola-puente/` y el secreto de firma en
+`~/.config/consola-puente/secreto` (600); los dos se montan en el contenedor.
+Para apagar la consola: `CONSOLA_ACTIVA: "0"` en el compose, o
+`systemctl --user stop consola-puente`. Reiniciar el puente cierra las terminales.
 
 ## Variables de entorno
 
@@ -34,6 +88,14 @@ y ejecuta `docker compose up -d --force-recreate` desde
 | `LINKMANAGER_USER` | `admin` | Usuario de administración |
 | `LINKMANAGER_PASSWORD` | — | Contraseña en claro (se hashea al arrancar) |
 | `LINKMANAGER_PASSWORD_HASH` | — | Alternativa: hash de werkzeug ya calculado |
+| `LINKMANAGER_SESION_DIAS` | `30` | Duración máxima de una sesión |
+| `LINKMANAGER_SESION_INACTIVA_DIAS` | `7` | Caduca antes si no se usa en estos días |
+| `LINKMANAGER_PROXIES` | `nginx-proxy-manager` | Únicos orígenes cuyo `X-Real-IP` se cree |
+| `AGENTE_CONSULTAS` | `1` | `0` = el asistente no puede consultar el servidor |
+| `CONSOLA_ACTIVA` | `0` | `1` = acceso «Servidor» para los `admin` |
+| `CONSOLA_DESBLOQUEO_HORAS` | `8` | Cada cuánto vuelve a pedir el 2FA la consola |
+| `CONSOLA_SOCKET` | `/consola-puente/consola.sock` | Socket del puente |
+| `CONSOLA_SECRETO_FICHERO` | `/run/secrets/consola-puente` | Secreto HMAC compartido con el puente |
 | `LINKMANAGER_SECRET` | fichero `secret.key` | Clave de firma de sesiones |
 | `LINKMANAGER_PRIVATE` | `0` | `1` = toda la aplicación pide sesión |
 | `LINKMANAGER_METADATA` | `1` | `0` = no descargar metadatos de URLs externas |
@@ -181,6 +243,48 @@ Detalles que importan:
   cuando se añade a mano; si no hay, la tarjeta usa el monograma.
 - Sin `AGENTE_API_KEY` (o con `AGENTE_ACTIVO=0`) el botón no aparece y las rutas
   `/agente/*` responden 503. El portal funciona exactamente igual que antes.
+
+### Consultas de solo lectura al servidor
+
+El asistente tiene la herramienta `consultar_servidor`: cuando le preguntas por el
+hardware o el software («¿qué CPU tiene?», «¿hay servicios caídos?») ejecuta la
+consulta y contesta con el dato, en vez de decirte qué comando usar.
+
+No recibe comandos, recibe el **nombre** de una consulta de un catálogo cerrado
+que vive en el puente (`CONSULTAS` en `consola-puente/puente.py`):
+
+| Consulta | Qué ejecuta (ruta absoluta, argumentos fijos, sin shell ni sudo) |
+|---|---|
+| `resumen` | `hostnamectl`, `/etc/os-release`, `uname -srvmo`, `uptime` |
+| `cpu` | `lscpu` (sin la lista de flags), `/proc/loadavg` |
+| `memoria` | `free -h --si`, `swapon --show` |
+| `placa` | `/sys/class/dmi/id/*` legibles sin root (sin números de serie) |
+| `gpu` | `lspci -nn` |
+| `usb` | `lsusb` |
+| `temperaturas` | `sensors` |
+| `discos` | `lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL,ROTA,TRAN`, `df -hT` |
+| `montajes` | `findmnt -D` (solo sistemas de ficheros reales) |
+| `red` | `ip -br addr` (sin veth), `ip route`, `ss -tulnH` |
+| `procesos` | `ps -eo pid,user,pcpu,pmem,etime,comm` (solo nombre, nunca argumentos) |
+| `servicios` | `systemctl --failed`, servicios en marcha (sistema y usuario), `list-timers` |
+| `docker` | `docker ps -a` (nombre, imagen, estado) |
+| `docker_puertos` | `docker ps` (nombre y puertos) |
+| `docker_consumo` | `docker stats --no-stream`, `docker system df` |
+| `errores` | `journalctl -p 3 -b -n 60` |
+| `kernel` | `journalctl -k -p 4 -b -n 60` |
+| `arranques` | `journalctl --list-boots` |
+| `hora` | `timedatectl` |
+| `sesiones` | `who` |
+| `actualizaciones` | `apt list --upgradable` |
+| `ia` | `ollama list`, `ollama ps` |
+
+Garantías: solo programas que leen; 15 s máximo por paso; salida recortada a
+12 000 caracteres; se tapan patrones de contraseñas, tokens y claves; nada
+que muestre argumentos de procesos, variables de entorno ni `docker inspect`.
+Queda fuera a propósito lo que necesita root (`smartctl`, `dmidecode`, `dmesg`).
+Funciona aunque `CONSOLA_ACTIVA=0` (solo necesita el puente);
+`AGENTE_CONSULTAS=0` la apaga. Para añadir una consulta, se edita `CONSULTAS`
+y se reinstala el puente.
 
 ## El monitor del servidor
 

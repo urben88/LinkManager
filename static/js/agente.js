@@ -16,6 +16,53 @@
   const panel = document.getElementById('agente');
   if (!panel) return;
 
+  /* -------------------------------------------------------------- accesos
+
+     El cajón tiene dos accesos según el rol: «Enlaces» (el asistente) y
+     «Servidor» (la consola, solo admin). Este fichero lleva el cajón y las
+     pestañas; consola.js pinta el acceso «Servidor» cuando se le avisa. */
+
+  const modos = Array.from(panel.querySelectorAll('.agente-modo'));
+  const pestanasModo = Array.from(panel.querySelectorAll('.agente-modos [data-modo]'));
+  const anchoBtn = document.getElementById('agente-ancho');
+  const nuevaBtn = document.getElementById('agente-nueva');
+  const estadoSub = document.getElementById('agente-estado');
+  let modo = modos.length ? modos.find(m => !m.hidden)?.dataset.modo || modos[0].dataset.modo : 'enlaces';
+  try {
+    const guardado = sessionStorage.getItem('agente-modo');
+    if (guardado && modos.some(m => m.dataset.modo === guardado)) modo = guardado;
+  } catch (e) { /* nada */ }
+
+  function ponerAncho(ancho) {
+    panel.classList.toggle('agente--ancho', ancho);
+    if (anchoBtn) anchoBtn.setAttribute('aria-pressed', ancho ? 'true' : 'false');
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  function elegirModo(nuevo) {
+    modo = nuevo;
+    modos.forEach(m => { m.hidden = m.dataset.modo !== modo; });
+    pestanasModo.forEach(b => b.setAttribute('aria-selected', b.dataset.modo === modo ? 'true' : 'false'));
+    const esServidor = modo === 'servidor';
+    if (nuevaBtn) nuevaBtn.hidden = esServidor;
+    if (anchoBtn) anchoBtn.hidden = !esServidor;
+    panel.classList.toggle('agente--servidor', esServidor);
+    if (estadoSub) estadoSub.textContent = esServidor ? 'consola del servidor' : 'lee enlaces y propone';
+    try { sessionStorage.setItem('agente-modo', modo); } catch (e) { /* nada */ }
+    if (!panel.hidden) avisarModo();
+  }
+
+  function avisarModo() {
+    if (modo === 'servidor') {
+      window.dispatchEvent(new CustomEvent('consola:mostrar'));
+    } else if (hayAgente) {
+      cargarHistorial().then(() => { alFinal(); texto.focus(); });
+    }
+  }
+
+  pestanasModo.forEach(b => b.addEventListener('click', () => elegirModo(b.dataset.modo)));
+  if (anchoBtn) anchoBtn.addEventListener('click', () => ponerAncho(!panel.classList.contains('agente--ancho')));
+
   const hilo = document.getElementById('agente-hilo');
   const form = document.getElementById('agente-form');
   const texto = document.getElementById('agente-texto');
@@ -23,6 +70,7 @@
   const estado = document.getElementById('agente-estado');
   const abrirBtn = document.getElementById('abrir-agente');
   const cabecera = window.CSRF || '';
+  const hayAgente = !!hilo;
 
   let cargado = false;
   let ocupado = false;
@@ -289,7 +337,14 @@
 
   /* -------------------------------------------------------------- historial */
 
-  async function cargarHistorial() {
+  // Una sola carga a la vez: abrir() y el atajo del monitor la piden casi juntas
+  let cargando = null;
+  function cargarHistorial() {
+    if (!cargando) cargando = cargarHistorialAhora().finally(() => { cargando = null; });
+    return cargando;
+  }
+
+  async function cargarHistorialAhora() {
     if (cargado) return;
     const datos = await pedir('/agente/historial', { method: 'GET' });
     if (!datos.ok) {
@@ -312,6 +367,8 @@
         + '«Reordena el portal»</button>'
         + '<button type="button" class="agente-ejemplo" data-texto="Quiero una sección nueva para mis herramientas de IA. Te paso enlaces: ">'
         + '«Sección nueva»</button>'
+        + '<button type="button" class="agente-ejemplo" data-texto="Resúmeme los últimos cortes de luz y reinicios del servidor y dame un diagnóstico.">'
+        + '«¿Ha habido cortes?»</button>'
         + '</div>';
       hilo.appendChild(bienvenida);
       hilo.addEventListener('click', (ev) => {
@@ -359,7 +416,7 @@
     panel.hidden = false;
     document.body.classList.add('agente-abierto');
     if (abrirBtn) abrirBtn.setAttribute('aria-expanded', 'true');
-    cargarHistorial().then(() => { alFinal(); texto.focus(); });
+    avisarModo();
     try { sessionStorage.setItem('agente-abierto', '1'); } catch (e) { /* nada */ }
   }
 
@@ -371,6 +428,7 @@
   }
 
   function autoAlto() {
+    if (!texto) return;
     texto.style.height = 'auto';
     texto.style.height = Math.min(texto.scrollHeight, 160) + 'px';
   }
@@ -379,7 +437,34 @@
 
   if (abrirBtn) abrirBtn.addEventListener('click', () => (panel.hidden ? abrir() : cerrar()));
   document.getElementById('agente-cerrar').addEventListener('click', cerrar);
-  document.getElementById('agente-nueva').addEventListener('click', async () => {
+  elegirModo(modo);
+
+  // Escape cierra el cajón, como los diálogos del portal (no dentro de una terminal).
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape' || panel.hidden || document.querySelector('.dialogo:not([hidden])')) return;
+    const foco = document.activeElement;
+    if (foco && foco.closest('.xterm')) return;   // en la terminal, Esc es de la terminal
+    if (panel.contains(foco) || foco === document.body || foco === abrirBtn) {
+      cerrar();
+      if (abrirBtn) abrirBtn.focus();
+    }
+  });
+
+  try {
+    if (sessionStorage.getItem('agente-abierto') === '1') abrir();
+  } catch (e) { /* nada */ }
+
+  if (!hayAgente) return;   // solo consola: lo de abajo es del asistente de enlaces
+
+  // Para el botón «Pedir diagnóstico» del monitor: abre el cajón y envía.
+  window.preguntarAsistente = async (pregunta) => {
+    if (modo !== 'enlaces') elegirModo('enlaces');
+    if (panel.hidden) abrir();
+    await cargarHistorial();
+    enviar(pregunta);
+  };
+
+  nuevaBtn.addEventListener('click', async () => {
     const datos = await pedir('/agente/nueva', { method: 'POST', body: '{}' });
     if (!datos.ok) return;
     hilo.innerHTML = '';
@@ -402,12 +487,4 @@
     }
   });
 
-  // Escape cierra el cajón, como los diálogos del portal.
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && !panel.hidden && document.activeElement === texto) cerrar();
-  });
-
-  try {
-    if (sessionStorage.getItem('agente-abierto') === '1') abrir();
-  } catch (e) { /* nada */ }
 })();

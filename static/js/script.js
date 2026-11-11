@@ -4,6 +4,14 @@
    preferencias con JS del navegador. Animaciones solo de transform/opacity
    (guía 08 del kit de diseño).
    ========================================================================== */
+// Los datos del portal llegan como JSON (la CSP no admite <script> en línea).
+(() => {
+  try {
+    const datos = JSON.parse(document.getElementById('datos-portal')?.textContent || '{}');
+    Object.assign(window, datos);
+  } catch (e) { /* sin datos: el portal funciona en modo lectura */ }
+})();
+
 (() => {
   'use strict';
 
@@ -60,12 +68,19 @@
 
   /* ----------------------------------------------------------- diálogos */
 
+  // Al cerrar un diálogo el foco vuelve a lo que lo abrió (teclado y lectores de pantalla).
+  const origenDialogo = new WeakMap();
+
   function abrir(id) {
     const dlg = document.getElementById(id);
     if (!dlg) return;
+    if (dlg.hidden && document.activeElement && document.activeElement !== document.body) {
+      origenDialogo.set(dlg, document.activeElement);
+    }
     dlg.hidden = false;
     document.body.style.overflow = 'hidden';
-    const primero = dlg.querySelector('input:not([type=hidden]),select,textarea,button');
+    // primero el campo a rellenar; el botón de cerrar va antes en el HTML pero no es lo que se busca
+    const primero = dlg.querySelector('input:not([type=hidden]):not([type=file]),select,textarea') || dlg.querySelector('button');
     if (primero) setTimeout(() => primero.focus(), 40);
   }
 
@@ -73,6 +88,9 @@
     if (!dlg) return;
     dlg.hidden = true;
     if (!$('.dialogo:not([hidden])')) document.body.style.overflow = '';
+    const origen = origenDialogo.get(dlg);
+    origenDialogo.delete(dlg);
+    if (origen && origen.isConnected) origen.focus();
   }
 
   document.addEventListener('click', (e) => {
@@ -100,40 +118,97 @@
     if (e.key.toLowerCase() === 's') { e.preventDefault(); abrir('dlg-nueva-seccion'); }
   });
 
-  /* ------------------------------------------------- subdivisiones (grupos) */
+  /* ------------------------------------------------- subdivisiones (grupos)
+
+     Una carpeta se abre en un panel flotante, por encima de la rejilla: abrirla
+     no empuja ni recoloca ninguna otra tarjeta. Su contenido (.rejilla-hijos)
+     se mueve al panel al abrir y vuelve a su sitio al cerrar. Solo al buscar
+     se enseñan los hijos que coinciden dentro de la propia sección. */
 
   (function grupos() {
-    function panelDe(tarjeta) {
-      return document.getElementById('hijos-' + tarjeta.dataset.padre);
-    }
+    const velo = document.getElementById('carpeta-velo');
+    if (!velo) return;
+    const caja = $('.carpeta-flotante', velo);
+    const cuerpo = document.getElementById('carpeta-cuerpo');
+    const titulo = document.getElementById('carpeta-titulo');
+    const sub = document.getElementById('carpeta-sub');
+    let abierta = null;   // { tarjeta, contenido, hueco, boton }
 
-    function pintar(tarjeta, abierto) {
+    const panelDe = (tarjeta) => document.getElementById('hijos-' + tarjeta.dataset.padre);
+
+    function abrirCarpeta(tarjeta, boton) {
+      if (abierta) cerrarCarpeta(false);
       const panel = panelDe(tarjeta);
-      if (!panel) return;
-      panel.hidden = !abierto;
-      tarjeta.dataset.abierto = abierto ? '1' : '0';
-      const boton = $('.grupo-pie', tarjeta);
-      if (boton) boton.setAttribute('aria-expanded', String(abierto));
-      if (!abierto) panel.style.gridRowEnd = '';
-      pedirEmpaquetado();
+      const contenido = panel && $('.rejilla-hijos', panel);
+      if (!contenido) return;
+
+      // un hueco marca dónde vuelve el contenido al cerrar
+      const hueco = document.createComment('carpeta');
+      contenido.before(hueco);
+      cuerpo.appendChild(contenido);
+      panel.hidden = true;
+      // al abrir desde una búsqueda se enseña la carpeta entera
+      $$('.tarjeta', contenido).forEach((h) => { h.hidden = false; });
+
+      const n = $$('.tarjeta', contenido).length;
+      titulo.textContent = ($('.tarjeta-titulo', tarjeta) || {}).textContent || 'Carpeta';
+      const desc = ($('.tarjeta-desc', tarjeta) || {}).textContent || '';
+      sub.textContent = `${n} ${n === 1 ? 'enlace' : 'enlaces'}${desc ? ' · ' + desc : ''}`;
+
+      // la carpeta crece desde donde está su tarjeta
+      const r = tarjeta.getBoundingClientRect();
+      caja.style.setProperty('--origen-x', `${r.left + r.width / 2}px`);
+      caja.style.setProperty('--origen-y', `${r.top + r.height / 2}px`);
+
+      abierta = { tarjeta, contenido, hueco, boton: boton || $('.grupo-pie', tarjeta) };
+      tarjeta.dataset.abierto = '1';
+      if (abierta.boton) abierta.boton.setAttribute('aria-expanded', 'true');
+      velo.classList.remove('cerrando');
+      velo.hidden = false;
+      document.body.style.overflow = 'hidden';
+      document.getElementById('carpeta-cerrar').focus({ preventScroll: true });
     }
 
-    // estado guardado por el usuario
-    $$('.tarjeta--grupo').forEach((t) => {
-      pintar(t, leer('lm-grupo-' + t.dataset.padre, '0') === '1');
-    });
+    function cerrarCarpeta(devolverFoco = true) {
+      if (!abierta) return;
+      const { tarjeta, contenido, hueco, boton } = abierta;
+      abierta = null;
+      hueco.replaceWith(contenido);
+      tarjeta.dataset.abierto = '0';
+      if (boton) boton.setAttribute('aria-expanded', 'false');
+      if (!$('.dialogo:not([hidden])')) document.body.style.overflow = '';
+      if (devolverFoco && boton) boton.focus({ preventScroll: true });
+
+      const fin = () => { velo.hidden = true; velo.classList.remove('cerrando'); };
+      if (!devolverFoco) { fin(); return; }
+      velo.classList.add('cerrando');
+      setTimeout(fin, 160);
+      // si había una búsqueda, se vuelve a aplicar sobre el contenido devuelto
+      const buscador = $('#buscador');
+      if (buscador && buscador.value.trim()) buscador.dispatchEvent(new Event('input'));
+    }
 
     document.addEventListener('click', (e) => {
       const boton = e.target.closest('.grupo-pie');
-      if (!boton) return;
-      e.preventDefault();
-      const tarjeta = boton.closest('.tarjeta');
-      const panel = panelDe(tarjeta);
-      if (!panel) return;
-      const abrirAhora = panel.hidden;
-      pintar(tarjeta, abrirAhora);
-      guardar('lm-grupo-' + tarjeta.dataset.padre, abrirAhora ? '1' : '0');
+      const mosaico = !boton && e.target.closest('.tarjeta--grupo .tarjeta-mosaico');
+      if (boton || mosaico) {
+        e.preventDefault();
+        const tarjeta = (boton || mosaico).closest('.tarjeta');
+        if (abierta && abierta.tarjeta === tarjeta) cerrarCarpeta();
+        else abrirCarpeta(tarjeta, boton);
+        return;
+      }
+      if (e.target.closest('#carpeta-cerrar') || e.target === velo) cerrarCarpeta();
     });
+
+    document.addEventListener('keydown', (e) => {
+      // con un diálogo encima (editar una tarjeta de la carpeta), Esc cierra
+      // primero el diálogo
+      if (e.key === 'Escape' && abierta && !$('.dialogo:not([hidden])')) cerrarCarpeta();
+    }, true);   // en captura: decide antes de que el otro Esc cierre el diálogo
+
+    // la búsqueda trabaja sobre la rejilla: antes de filtrar, se cierra
+    document.addEventListener('lm:cerrar-carpeta', () => cerrarCarpeta(false));
   })();
 
   /* ------------------------------------------ doble confirmación al eliminar
@@ -185,6 +260,7 @@
     const principales = $$('.tarjeta:not(.tarjeta--hijo)');
 
     function filtrar() {
+      document.dispatchEvent(new Event('lm:cerrar-carpeta'));
       const q = input.value.trim().toLowerCase();
       let visibles = 0;
 
@@ -203,7 +279,7 @@
           panel.hidden = !hay;
           if (hay && padre) { padre.hidden = false; visibles++; }
         } else {
-          panel.hidden = leer('lm-grupo-' + panel.dataset.padre, '0') !== '1';
+          panel.hidden = true;
         }
       });
 

@@ -9,6 +9,9 @@
      que no parpadee.
    · Si el panel está cerrado o la pestaña en segundo plano, deja de pedir: un
      monitor que vigila no debe ser lo que más consume.
+   · La pestaña «Cortes y registros» lee /monitor/vigilante y /monitor/registro:
+     lo que escribe el vigilante del servidor (~/watchdog). Se pide cada 15 s y
+     solo mientras esa pestaña está a la vista.
    ========================================================================== */
 
 (function () {
@@ -29,6 +32,7 @@
   let temporizador = null;
   let montado = false;
   let cerrado = false;
+  let pestana = 'ahora';            // 'ahora' (Glances) o 'vigilante'
 
   /* ---------------------------------------------------------- utilidades */
 
@@ -146,7 +150,7 @@
     // cabecera
     sub.textContent = `${d.equipo.nombre} · ${d.equipo.so} · ${d.equipo.nucleos} núcleos`;
     const pie = document.getElementById('monitor-pie');
-    if (pie && d.equipo.arranque) {
+    if (pie && d.equipo.arranque && pestana === 'ahora') {
       pie.textContent = `Encendido ${arranque(d.equipo.arranque)} · medidas de Glances, solo lectura`;
     }
 
@@ -260,13 +264,17 @@
 
   /* ----------------------------------------------------------------- bucle */
 
+  function pedirActual() {
+    return pestana === 'vigilante' ? pedirVigilante() : pedir();
+  }
+
   function programar() {
     clearTimeout(temporizador);
     if (cerrado) return;
     temporizador = setTimeout(async () => {
-      await pedir();
+      await pedirActual();
       programar();
-    }, INTERVALO);
+    }, pestana === 'vigilante' ? INTERVALO_VIGILANTE : INTERVALO);
   }
 
   async function abrir() {
@@ -283,7 +291,7 @@
     document.body.classList.add('monitor-abierto');
     if (botonAbrir) botonAbrir.setAttribute('aria-expanded', 'true');
     if (!montado) montar();
-    await pedir();
+    await pedirActual();
     programar();
     try { sessionStorage.setItem('monitor-abierto', '1'); } catch (e) { /* nada */ }
   }
@@ -297,14 +305,329 @@
     try { sessionStorage.setItem('monitor-abierto', '0'); } catch (e) { /* nada */ }
   }
 
+  /* ------------------------------------------------- cortes y registros
+
+     Lo que cuenta el vigilante: si late, desde cuándo está encendido el
+     equipo y conectado el router, el último corte y la lista de sucesos.
+     Debajo, la cola de cualquiera de sus tres logs, tal cual. */
+
+  const cajaVigilante = document.getElementById('monitor-vigilante');
+  const botonAhora = document.getElementById('pestana-ahora');
+  const botonVigilante = document.getElementById('pestana-vigilante');
+  const avisoPestana = document.getElementById('pestana-vigilante-aviso');
+
+  const INTERVALO_VIGILANTE = 15000;
+  const REGISTROS = {
+    events: 'Sucesos',
+    health: 'Latido (1 min)',
+    fastbeat: 'Pulso fino (10 s)',
+  };
+  const ETIQUETAS = {
+    'CORTE-DE-LUZ?': 'Posible corte de luz',
+    'CORTE-DE-LUZ': 'Corte de luz',
+    'POST-MORTEM': 'Post-mortem',
+    'REINICIO': 'Reinicio',
+    'SALTO-DE-RELOJ': 'Hueco sin latidos',
+    'TEMPERATURA-ALTA': 'Temperatura alta',
+    'JOURNAL-GRANDE': 'Journal grande',
+    'BUCLE-CONTENEDOR': 'bucles de contenedor',
+    'REINICIOS-DOCKER': 'subidas del contador de reinicios de Docker',
+  };
+
+  let vigilanteMontado = false;
+  let registroActual = 'events';
+  let filtroSucesos = 'importantes';   // 'importantes' | 'cortes'
+
+  function duracion(segundos) {
+    if (segundos == null || Number.isNaN(Number(segundos))) return '—';
+    let s = Math.max(0, Math.round(Number(segundos)));
+    const d = Math.floor(s / 86400); s -= d * 86400;
+    const h = Math.floor(s / 3600); s -= h * 3600;
+    const m = Math.floor(s / 60);
+    if (d) return `${d} d ${h} h`;
+    if (h) return `${h} h ${m} min`;
+    if (m) return `${m} min`;
+    return `${s} s`;
+  }
+
+  function haceDesde(iso) {
+    const t = Date.parse(iso || '');
+    if (Number.isNaN(t)) return '—';
+    return 'hace ' + duracion((Date.now() - t) / 1000);
+  }
+
+  function fecha(isoOEpoch) {
+    const t = typeof isoOEpoch === 'number' ? isoOEpoch * 1000 : Date.parse(isoOEpoch || '');
+    if (Number.isNaN(t)) return '—';
+    return new Date(t).toLocaleString('es-ES', {
+      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  function montarVigilante() {
+    cajaVigilante.innerHTML = `
+      <div class="monitor-estado" id="v-estado" data-nivel="ok">
+        <span class="monitor-punto"></span>
+        <strong id="v-estado-texto">—</strong>
+        <span class="monitor-hora" id="v-latido"></span>
+      </div>
+
+      <div class="vigilante-datos">
+        <div class="vigilante-dato">
+          <span class="medidor-nombre">Encendido</span>
+          <strong id="v-encendido">—</strong>
+          <span class="medidor-pie" id="v-encendido-pie"></span>
+        </div>
+        <div class="vigilante-dato">
+          <span class="medidor-nombre">Router conectado</span>
+          <strong id="v-router">—</strong>
+          <span class="medidor-pie" id="v-router-pie"></span>
+        </div>
+        <div class="vigilante-dato">
+          <span class="medidor-nombre">Último corte</span>
+          <strong id="v-corte">—</strong>
+          <span class="medidor-pie" id="v-corte-pie"></span>
+        </div>
+        <div class="vigilante-dato">
+          <span class="medidor-nombre">Últimos 30 días</span>
+          <strong id="v-cuentas">—</strong>
+          <span class="medidor-pie" id="v-cuentas-pie"></span>
+        </div>
+      </div>
+
+      <div class="vigilante-veredicto" id="v-veredicto" hidden></div>
+
+      ${window.AGENTE ? `
+      <button type="button" class="vigilante-diagnostico" id="v-diagnostico">
+        <span>Pedir diagnóstico al asistente</span>
+        <small>resume los cortes y explica la causa más probable</small>
+      </button>` : ''}
+
+      <section class="vigilante-seccion">
+        <div class="vigilante-seccion-cab">
+          <h3>Sucesos</h3>
+          <div class="vigilante-segmentos" role="group" aria-label="Qué sucesos ver">
+            <button type="button" data-filtro="importantes" aria-pressed="true">Todos</button>
+            <button type="button" data-filtro="cortes" aria-pressed="false">Solo cortes</button>
+          </div>
+        </div>
+        <ol class="vigilante-sucesos" id="v-sucesos"></ol>
+        <p class="medidor-pie" id="v-ruido" hidden></p>
+      </section>
+
+      <section class="vigilante-seccion">
+        <div class="vigilante-seccion-cab">
+          <h3>Registros</h3>
+          <div class="vigilante-segmentos" role="group" aria-label="Qué registro ver" id="v-registros">
+            ${Object.entries(REGISTROS).map(([clave, nombre]) =>
+              `<button type="button" data-registro="${clave}" aria-pressed="${clave === registroActual}">${nombre}</button>`
+            ).join('')}
+          </div>
+        </div>
+        <pre class="vigilante-log" id="v-log" tabindex="0" aria-label="Últimas líneas del registro">…</pre>
+        <p class="medidor-pie" id="v-log-pie"></p>
+      </section>
+
+      <p class="monitor-error" id="v-error" hidden></p>`;
+
+    cajaVigilante.querySelectorAll('[data-filtro]').forEach((b) => b.addEventListener('click', () => {
+      filtroSucesos = b.dataset.filtro;
+      cajaVigilante.querySelectorAll('[data-filtro]').forEach((o) =>
+        o.setAttribute('aria-pressed', String(o === b)));
+      if (ultimoVigilante) pintarSucesos(ultimoVigilante);
+    }));
+    cajaVigilante.querySelectorAll('[data-registro]').forEach((b) => b.addEventListener('click', () => {
+      registroActual = b.dataset.registro;
+      cajaVigilante.querySelectorAll('[data-registro]').forEach((o) =>
+        o.setAttribute('aria-pressed', String(o === b)));
+      pedirRegistro(true);
+    }));
+    const botonDiagnostico = document.getElementById('v-diagnostico');
+    if (botonDiagnostico) botonDiagnostico.addEventListener('click', () => {
+      if (typeof window.preguntarAsistente === 'function') {
+        window.preguntarAsistente(
+          'Hazme un resumen de los últimos cortes de luz, reinicios y sucesos del servidor '
+          + 'y un pequeño diagnóstico: causa más probable y qué debería revisar.');
+      }
+    });
+    vigilanteMontado = true;
+  }
+
+  let ultimoVigilante = null;
+
+  function pintarSucesos(d) {
+    const lista = document.getElementById('v-sucesos');
+    const eventos = (d.eventos || []).filter((e) =>
+      filtroSucesos === 'cortes' ? e.familia === 'corte' : true);
+    if (!eventos.length) {
+      lista.innerHTML = `<li class="vigilante-suceso vigilante-suceso--vacio">${
+        filtroSucesos === 'cortes' ? 'No hay cortes registrados.' : 'Sin sucesos.'}</li>`;
+    } else {
+      lista.innerHTML = eventos.map((e) => {
+        let chip = '';
+        if (e.servidor_cayo === true) chip = '<span class="vigilante-chip vigilante-chip--alto">servidor apagado</span>';
+        else if (e.servidor_cayo === false) chip = '<span class="vigilante-chip">servidor encendido</span>';
+        const texto = e.tipo === 'POST-MORTEM'
+          ? `<strong>${esc(e.veredicto)}</strong> · ${esc(e.explicacion)}`
+          : esc(e.mensaje);
+        return `
+          <li class="vigilante-suceso" data-familia="${esc(e.familia)}">
+            <div class="vigilante-suceso-cab">
+              <span class="vigilante-suceso-titulo">
+                <span class="vigilante-suceso-tipo">${esc(ETIQUETAS[e.tipo] || e.tipo)}</span>
+                ${chip}
+              </span>
+              <time datetime="${esc(e.ts)}" title="${esc(e.ts)}">${esc(fecha(e.ts))}</time>
+            </div>
+            <p>${texto}</p>
+          </li>`;
+      }).join('');
+    }
+
+    const ruido = Object.entries(d.ruido_24h || {});
+    const cajaRuido = document.getElementById('v-ruido');
+    cajaRuido.hidden = !ruido.length;
+    cajaRuido.textContent = ruido.length
+      ? 'Últimas 24 h, sin listar: ' + ruido.map(([t, n]) => `${n} ${ETIQUETAS[t] || t}`).join(' · ')
+        + '. Están en Registros → Sucesos.'
+      : '';
+  }
+
+  function pintarVigilante(d) {
+    ultimoVigilante = d;
+    const estado = d.estado || { nivel: 'ok', texto: '' };
+    document.getElementById('v-estado').dataset.nivel = estado.nivel;
+    document.getElementById('v-estado-texto').textContent = estado.texto;
+    const pulso = d.pulso || {};
+    document.getElementById('v-latido').textContent =
+      pulso.hace_s == null ? 'sin latidos' : `último latido hace ${duracion(pulso.hace_s)}`;
+
+    const eq = d.equipo || {};
+    document.getElementById('v-encendido').textContent = duracion(eq.uptime_s);
+    document.getElementById('v-encendido-pie').textContent =
+      eq.arranque ? 'desde ' + fecha(eq.arranque) : '';
+
+    const r = d.router;
+    document.getElementById('v-router').textContent = r ? duracion(r.conectado_s) : '—';
+    document.getElementById('v-router-pie').textContent =
+      r ? `desde ${fecha(r.desde)} · ${r.estado === 'Connected' ? 'conectado' : r.estado}` : 'sin datos del router';
+
+    const c = d.ultimo_corte;
+    document.getElementById('v-corte').textContent = c ? haceDesde(c.ts) : 'ninguno';
+    document.getElementById('v-corte-pie').textContent = c
+      ? fecha(c.ts) + (c.servidor_cayo === false ? ' · el servidor aguantó'
+        : c.servidor_cayo === true ? ' · el servidor se apagó' : '')
+      : 'sin cortes registrados';
+
+    const n = d.cuentas_30d || {};
+    document.getElementById('v-cuentas').textContent =
+      `${n.cortes || 0} ${n.cortes === 1 ? 'corte' : 'cortes'}`;
+    document.getElementById('v-cuentas-pie').textContent =
+      `${n.reinicios || 0} ${n.reinicios === 1 ? 'reinicio' : 'reinicios'} · `
+      + `${n.paradas || 0} ${n.paradas === 1 ? 'hueco' : 'huecos'} sin latidos`;
+
+    const v = d.ultimo_veredicto;
+    const cajaVeredicto = document.getElementById('v-veredicto');
+    cajaVeredicto.hidden = !v;
+    if (v) {
+      cajaVeredicto.dataset.familia = v.familia;
+      cajaVeredicto.innerHTML = `
+        <span class="medidor-nombre">Último post-mortem · ${esc(fecha(v.ts))}</span>
+        <strong>${esc(v.veredicto)}</strong>
+        <p>${esc(v.explicacion)}</p>`;
+    }
+
+    pintarSucesos(d);
+
+    // Un punto en la pestaña si hubo corte o reinicio en las últimas 24 h
+    avisoPestana.hidden = estado.nivel === 'ok';
+    avisoPestana.dataset.nivel = estado.nivel;
+
+    document.getElementById('v-error').hidden = true;
+  }
+
+  function errorVigilante(motivo) {
+    if (!vigilanteMontado) montarVigilante();
+    document.getElementById('v-estado').dataset.nivel = 'sin-datos';
+    document.getElementById('v-estado-texto').textContent = 'sin datos';
+    const aviso = document.getElementById('v-error');
+    aviso.hidden = false;
+    aviso.textContent = motivo || 'No se pudo leer el vigilante.';
+  }
+
+  async function pedirRegistro(bajarAlFinal) {
+    const caja = document.getElementById('v-log');
+    if (!caja) return;
+    // si el usuario subió a leer, no se le mueve al refrescar
+    const alFinal = bajarAlFinal || caja.scrollHeight - caja.scrollTop - caja.clientHeight < 24;
+    try {
+      const resp = await fetch(`/monitor/registro/${registroActual}?lineas=120`, {
+        credentials: 'same-origin', cache: 'no-store',
+      });
+      const d = await resp.json().catch(() => ({}));
+      caja.textContent = d.disponible ? d.lineas.join('\n') : (d.motivo || 'Sin datos.');
+      document.getElementById('v-log-pie').textContent = d.disponible
+        ? `${d.fichero} · últimas ${d.lineas.length} líneas · ~/watchdog/logs`
+        : '';
+      if (alFinal) caja.scrollTop = caja.scrollHeight;
+    } catch (error) {
+      caja.textContent = 'No se pudo leer el registro (' + error.message + ').';
+    }
+  }
+
+  async function pedirVigilante() {
+    try {
+      const resp = await fetch('/monitor/vigilante', { credentials: 'same-origin', cache: 'no-store' });
+      const d = await resp.json().catch(() => ({}));
+      if (!vigilanteMontado) montarVigilante();
+      if (!d || d.disponible === false) {
+        errorVigilante(d && d.motivo ? d.motivo : 'El vigilante no responde.');
+        return;
+      }
+      pintarVigilante(d);
+      await pedirRegistro(false);
+    } catch (error) {
+      errorVigilante('No se pudo leer el vigilante (' + error.message + ').');
+    }
+  }
+
+  function cambiarPestana(nueva, sinPedir) {
+    pestana = nueva;
+    const esVigilante = nueva === 'vigilante';
+    botonAhora.setAttribute('aria-selected', String(!esVigilante));
+    botonVigilante.setAttribute('aria-selected', String(esVigilante));
+    hilo.hidden = esVigilante;
+    cajaVigilante.hidden = !esVigilante;
+    const pie = document.getElementById('monitor-pie');
+    if (pie) {
+      pie.innerHTML = esVigilante
+        ? 'Logs del <strong>vigilante</strong> (~/watchdog) · solo lectura · cada 15 s'
+        : 'Medidas de <strong>Glances</strong> · solo lectura · se actualiza cada 2 s';
+    }
+    try { sessionStorage.setItem('monitor-pestana', nueva); } catch (e) { /* nada */ }
+    if (sinPedir || cerrado || panel.hidden) return;
+    pedirActual().then(programar);
+  }
+
   /* ------------------------------------------------------------- arranque */
 
   if (botonAbrir) botonAbrir.addEventListener('click', () => (panel.hidden ? abrir() : cerrar()));
   if (botonCerrar) botonCerrar.addEventListener('click', cerrar);
-  document.getElementById('monitor-refrescar').addEventListener('click', pedir);
+  const botonRefrescar = document.getElementById('monitor-refrescar');
+  botonRefrescar.addEventListener('click', async () => {
+    botonRefrescar.classList.add('girando');
+    await pedirActual();
+    setTimeout(() => botonRefrescar.classList.remove('girando'), 450);
+  });
 
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && !panel.hidden && document.activeElement === document.body) cerrar();
+    if (ev.key !== 'Escape' || panel.hidden || document.querySelector('.dialogo:not([hidden])')) return;
+    const foco = document.activeElement;
+    const enPanel = panel.contains(foco);
+    if (enPanel || foco === document.body || foco === botonAbrir) {
+      cerrar();
+      if (botonAbrir) botonAbrir.focus();   // el foco no se pierde al cerrar
+    }
   });
 
   // Con la pestaña en segundo plano no se pide nada; al volver, se reanuda.
@@ -312,11 +635,15 @@
     if (document.hidden) {
       clearTimeout(temporizador);
     } else if (!panel.hidden && !cerrado) {
-      pedir().then(programar);
+      pedirActual().then(programar);
     }
   });
 
+  botonAhora.addEventListener('click', () => cambiarPestana('ahora'));
+  botonVigilante.addEventListener('click', () => cambiarPestana('vigilante'));
+
   try {
+    if (sessionStorage.getItem('monitor-pestana') === 'vigilante') cambiarPestana('vigilante', true);
     if (sessionStorage.getItem('monitor-abierto') === '1') abrir();
   } catch (e) { /* nada */ }
 })();

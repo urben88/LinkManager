@@ -15,7 +15,10 @@
 <header class="cabecera">
   <div class="cabecera-fila">
     <a class="marca" href="{{ url_for('index') }}">
-      <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager">
+      <picture>
+        <source media="(max-width: 720px)" srcset="{{ url_for('static', filename='images/icon.png') }}">
+        <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager">
+      </picture>
     </a>
 
     <div class="cabecera-buscador">
@@ -27,7 +30,7 @@
     </div>
 
     <div class="cabecera-acciones">
-      <a class="boton" href="{{ url_for('index') }}">{{ icono('chevron', 15) }}<span class="texto-boton">Volver a los enlaces</span></a>
+      <a class="boton" href="{{ url_for('index') }}" aria-label="Volver a los enlaces">{{ icono('volver', 15) }}<span class="texto-boton">Volver a los enlaces</span></a>
     </div>
   </div>
 </header>
@@ -113,62 +116,6 @@
   {% endif %}
 </main>
 
-<script>
-  (function () {
-    const f = document.getElementById('f');
-    const filas = Array.from(document.querySelectorAll('tbody tr'));
-    const secciones = Array.from(document.querySelectorAll('.seccion'));
-    const sin = document.getElementById('sin');
-    const contador = document.getElementById('contador');
-    const btnTodo = document.getElementById('plegar-todo');
-    if (!f) return;
-
-    function filtrar() {
-      const q = f.value.trim().toLowerCase();
-      let visibles = 0;
-      filas.forEach((tr) => {
-        const coincide = !q || (tr.dataset.buscar || '').includes(q);
-        tr.hidden = !coincide;
-        if (coincide) visibles++;
-      });
-      secciones.forEach((s) => {
-        const hay = s.querySelectorAll('tbody tr:not([hidden])').length > 0;
-        s.hidden = !hay;
-        if (q && hay) s.dataset.plegada = '0';
-      });
-      if (contador) contador.textContent = q ? `${visibles} de ${filas.length}` : '';
-      if (sin) sin.hidden = !(q && visibles === 0);
-    }
-
-    f.addEventListener('input', filtrar);
-
-    document.querySelectorAll('.seccion-plegar').forEach((b) => {
-      b.addEventListener('click', () => {
-        const s = b.closest('.seccion');
-        s.dataset.plegada = s.dataset.plegada === '1' ? '0' : '1';
-      });
-    });
-
-    if (btnTodo) {
-      const rotular = () => {
-        const hay = secciones.some((s) => s.dataset.plegada !== '1');
-        btnTodo.querySelector('span').textContent = hay ? 'Plegar todo' : 'Desplegar todo';
-      };
-      rotular();
-      btnTodo.addEventListener('click', () => {
-        const hay = secciones.some((s) => s.dataset.plegada !== '1');
-        secciones.forEach((s) => { s.dataset.plegada = hay ? '1' : '0'; });
-        rotular();
-      });
-    }
-
-    document.addEventListener('keydown', (e) => {
-      const escribiendo = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-      if (e.key === '/' && !escribiendo) { e.preventDefault(); f.focus(); }
-    });
-
-    filtrar();
-  })();
-</script>
+<script src="{{ url_for('static', filename='js/servidor.js') }}"></script>
 </body>
 </html>
