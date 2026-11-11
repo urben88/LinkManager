@@ -1269,3 +1269,140 @@ body.modo-edicion .tarjeta:not(:has(.tarjeta-portada, .tarjeta-mosaico)) .tarjet
 @media (max-width: 720px) {
   .consola-nueva .boton span { display: none; }
 }
+
+/* ---------------------------------------------------------- visor de registros
+
+   Dos columnas: a la izquierda las fuentes/tokens, a la derecha los registros.
+   En pantallas estrechas se apilan. Cada registro enseña un resumen y el JSON
+   completo al desplegarlo. */
+
+.cabecera-fila--simple::after { content: none; }
+
+.registros-columnas {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+  gap: var(--e5);
+  align-items: start;
+}
+.registros-columnas > .seccion { margin-bottom: 0; min-width: 0; }
+
+.registros .resumen { margin-bottom: var(--e4); }
+.registros .seccion-cabecera { margin-bottom: var(--e2); }
+
+.form-fuente {
+  display: flex; flex-wrap: wrap; gap: var(--e2); align-items: end;
+  margin: var(--e3) 0;
+}
+.form-fuente .campo { flex: 1 1 180px; }
+
+.filtros-registros {
+  display: flex; flex-wrap: wrap; gap: var(--e2); align-items: end;
+  margin-bottom: var(--e3);
+}
+.filtros-registros .campo { flex: 1 1 180px; }
+.filtros-registros .campo:first-child { flex-basis: 240px; }
+
+.registros-acciones {
+  display: flex; flex-wrap: wrap; gap: var(--e2); align-items: center;
+  margin-bottom: var(--e4);
+}
+
+.registros-lista { display: grid; gap: var(--e3); }
+
+.registro {
+  border: 1px solid var(--borde); border-radius: var(--radio);
+  background: var(--superficie); padding: var(--e3);
+}
+.registro-cab {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--e2);
+  font-size: .78rem; color: var(--suave);
+}
+.registro-cab time { color: var(--tenue); font-variant-numeric: tabular-nums; }
+.fecha-celda { white-space: nowrap; }
+.registro-ruta { color: var(--suave); overflow-wrap: anywhere; }
+.registro details { margin-top: var(--e2); }
+.registro summary {
+  cursor: pointer; color: var(--suave); font-size: .84rem;
+  overflow-wrap: anywhere;
+}
+.registro summary:hover { color: var(--texto); }
+.registro-json {
+  margin: var(--e2) 0 0; max-height: 320px; overflow: auto;
+  padding: var(--e3); background: var(--fondo);
+  border: 1px solid var(--borde); border-radius: var(--radio-sm);
+  font: .75rem/1.55 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2;
+}
+.registro-acciones {
+  display: flex; flex-wrap: wrap; gap: var(--e2); align-items: center;
+  margin-top: var(--e2);
+}
+.registro-acciones form { margin: 0; }
+
+.insignia--fuente {
+  color: var(--acento);
+  border-color: color-mix(in srgb, var(--acento) 45%, transparent);
+}
+
+.token-nuevo {
+  margin-bottom: var(--e5); padding: var(--e4);
+  border: 1px solid color-mix(in srgb, var(--acento) 45%, var(--borde));
+  border-radius: var(--radio);
+  background: color-mix(in srgb, var(--acento) 7%, var(--superficie));
+}
+.token-nuevo h2 { margin: 0 0 var(--e2); font-size: .95rem; }
+.token-nuevo p { margin: 0 0 var(--e2); font-size: .84rem; color: var(--suave); }
+.token-fila {
+  display: flex; flex-wrap: wrap; gap: var(--e2); align-items: center;
+  margin: var(--e2) 0 var(--e3);
+}
+.token-fila code {
+  padding: 7px 10px; background: var(--fondo);
+  border: 1px solid var(--borde); border-radius: var(--radio-sm);
+  font: .78rem ui-monospace, "SF Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+.token-nuevo pre, .guia pre {
+  margin: var(--e2) 0; padding: var(--e3); overflow: auto; max-width: 100%;
+  background: var(--fondo); border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  font: .75rem/1.55 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre; tab-size: 2;
+}
+
+.guia {
+  margin-top: var(--e4); padding-top: var(--e3);
+  border-top: 1px solid var(--borde);
+}
+.guia summary { cursor: pointer; color: var(--acento); font-size: .84rem; }
+.guia ol { margin: var(--e2) 0; padding-left: 1.2rem; font-size: .82rem; color: var(--suave); }
+.guia p { font-size: .8rem; color: var(--suave); }
+
+.borrar-todo {
+  margin-top: var(--e5); padding-top: var(--e3);
+  border-top: 1px solid var(--borde);
+}
+.borrar-todo summary { cursor: pointer; color: var(--peligro); font-size: .82rem; }
+.borrar-todo form {
+  display: grid; gap: var(--e3); justify-items: start;
+  margin-top: var(--e3); font-size: .82rem; color: var(--suave);
+}
+
+.paginacion {
+  display: flex; flex-wrap: wrap; gap: var(--e2); align-items: center;
+  justify-content: center; margin-top: var(--e4);
+}
+
+@media (max-width: 1000px) {
+  .registros-columnas { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .registro { padding: var(--e3); }
+  .registros .tabla th { white-space: normal; }
+  .registros .ocultar-movil { display: none; }
+  .registro-acciones .boton { flex: 1 1 auto; justify-content: center; }
+  .registro-acciones form { flex: 1 1 100%; }
+  .registro-acciones form .boton { width: 100%; justify-content: center; }
+  .token-nuevo, .token-nuevo pre { max-width: 100%; }
+}

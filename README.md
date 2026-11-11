@@ -81,6 +81,29 @@ Crea el socket en `~/.local/share/consola-puente/` y el secreto de firma en
 Para apagar la consola: `CONSOLA_ACTIVA: "0"` en el compose, o
 `systemctl --user stop consola-puente`. Reiniciar el puente cierra las terminales.
 
+## Registros de herramientas
+
+Los administradores tienen un visor en `/registros`. Cada herramienta recibe
+un token propio (se crea desde esa página o con
+`docker exec -it linkmanager_web python3 /app/tools/registros.py crear NOMBRE`);
+el token solo se muestra una vez y en la base queda su SHA-256. El nombre del
+token es la fuente que separa los registros.
+
+La herramienta hace un `POST` autenticado con ese token:
+
+```bash
+curl -X POST https://www.urbenserver.com/api/ingesta \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"tipo":"log","texto":"hola","ruta":"/","usuario":"yo"}'
+```
+
+Campos recomendados: `tipo`, `fecha` (ISO 8601), `ruta`, `usuario`, `texto` y
+`datos`. Cualquier JSON extra se guarda tal cual. Si `fecha` (o `idempotencia`) viene informada,
+un reintento con el mismo contenido no duplica el registro. El visor permite
+filtrar por fuente, buscar, copiar el JSON/texto, exportar a JSONL o CSV y
+borrar registros o tokens.
+
 ## Variables de entorno
 
 | Variable | Por defecto | Qué hace |

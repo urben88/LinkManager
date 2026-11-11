@@ -25,7 +25,10 @@ Y desde 2026-11-11, con la consola del servidor:
   · CSP sin JavaScript en línea, HSTS y cookie Secure detrás de HTTPS.
 """
 
+import csv
+import hashlib
 import hmac
+import io
 import ipaddress
 import json
 import os
@@ -40,9 +43,9 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
-from flask import (Flask, abort, flash, g, jsonify, redirect, render_template,
+from flask import (Flask, Response, abort, flash, g, jsonify, redirect, render_template,
                    request, send_from_directory, session, url_for)
 from flask.sessions import SecureCookieSessionInterface
 from werkzeug.security import generate_password_hash
@@ -337,17 +340,22 @@ def _csrf_valido() -> bool:
     return bool(enviado) and bool(esperado) and hmac.compare_digest(str(enviado), str(esperado))
 
 
+# La ingesta máquina-máquina se autentica con su token, no con la cookie:
+# no puede (ni debe) llevar un CSRF de una sesión de navegador.
+RUTAS_SIN_CSRF = {"/api/ingesta"}
+
+
 @app.before_request
 def _guardia():
     # 0) El websocket de la consola se comprueba ANTES del apretón de manos.
     if request.path.startswith("/consola/ws/"):
         return _guardia_websocket()
-    # 1) Todo POST necesita token CSRF (incluido /login).
-    if request.method == "POST" and not _csrf_valido():
+    # 1) Todo POST necesita token CSRF (incluido /login), salvo la ingesta.
+    if request.method == "POST" and request.path not in RUTAS_SIN_CSRF and not _csrf_valido():
         abort(400, "Token CSRF ausente o inválido. Recarga la página e inténtalo de nuevo.")
     # 2) Si la app está en modo privado, todo exige sesión.
     if PRIVADO and not logueado():
-        publicas = {"login", "static", "salud", "favicon"}
+        publicas = {"login", "static", "salud", "favicon", "api_ingesta"}
         if request.endpoint not in publicas:
             return redirect(url_for("login", next=request.path))
 
@@ -381,7 +389,8 @@ def _cabeceras(resp):
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     # El hilo del asistente lleva notas y enlaces privados: ni caché ni índice.
     # La consola y el login, igual.
-    if request.path.startswith(("/agente", "/monitor", "/consola", "/login", "/cuenta")):
+    if request.path.startswith(("/agente", "/monitor", "/consola", "/login", "/cuenta",
+                                "/registros", "/api/ingesta")):
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Robots-Tag"] = "noindex, nofollow"
     return resp
@@ -397,6 +406,7 @@ def _inyectar():
     return {"logueado": s is not None, "csrf_token": csrf_token, "privado": PRIVADO,
             "usuario_actual": s["nombre"] if s else None,
             "rol_actual": s["rol"] if s else None,
+            "es_admin": bool(s and s["rol"] == "admin"),
             "puede_consola": bool(s and s["rol"] == "admin" and consola_disponible()),
             "agente_disponible": bool(agente is not None and agente.disponible()),
             "monitor_disponible": bool(monitor is not None and monitor.activo())}
@@ -536,6 +546,295 @@ def cerrar_otras_sesiones():
 @app.route("/salud")
 def salud():
     return jsonify({"ok": True, "logueado": logueado()})
+
+
+# --------------------------------------------------------------------------
+#  Registros de herramientas (visor de logs)
+#
+#  Cada herramienta recibe un token propio. Envía JSON a POST /api/ingesta y
+#  el registro queda en SQLite, separado por el nombre de su token. El visor
+#  /registros es solo para administradores.
+# --------------------------------------------------------------------------
+
+MAX_INGESTA_BYTES = 512 * 1024
+MAX_INGESTA_ITEMS = 200
+REGISTROS_POR_PAGINA = 100
+
+
+def _token_de_peticion():
+    cabecera = request.headers.get("Authorization", "")
+    if cabecera.lower().startswith("bearer "):
+        return cabecera[7:].strip()
+    return (request.headers.get("X-LinkManager-Token") or "").strip()
+
+
+def _fecha_de_item(item):
+    valor = item.get("fecha") or item.get("timestamp") or item.get("ts")
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, (int, float)):
+        numero = float(valor)
+        return numero / 1000.0 if numero > 10_000_000_000 else numero
+    if isinstance(valor, str) and valor.strip():
+        texto = valor.strip()
+        if texto.endswith("Z"):
+            texto = texto[:-1] + "+00:00"
+        try:
+            fecha = datetime.fromisoformat(texto)
+        except ValueError:
+            return None
+        if fecha.tzinfo is None:
+            fecha = fecha.replace(tzinfo=timezone.utc)
+        return fecha.timestamp()
+    return None
+
+
+def _texto_de_item(item):
+    for clave in ("texto", "mensaje", "message", "log", "text"):
+        valor = item.get(clave)
+        if isinstance(valor, str) and valor.strip():
+            return valor.strip()[:200_000]
+    return json.dumps(item, ensure_ascii=False, indent=2)[:200_000]
+
+
+def _campo_de_item(item, *claves, limite=200):
+    for clave in claves:
+        valor = item.get(clave)
+        if isinstance(valor, str) and valor.strip():
+            return valor.strip()[:limite]
+    return None
+
+
+@app.route("/api/ingesta", methods=["POST"])
+def api_ingesta():
+    if request.content_length is not None and request.content_length > MAX_INGESTA_BYTES:
+        return jsonify({"error": "Cuerpo demasiado grande."}), 413
+
+    fuente = seguridad.fuente_por_token(get_db(), _token_de_peticion())
+    if fuente is None:
+        return jsonify({"error": "Token inválido o fuente desactivada."}), 401
+
+    crudo = request.get_data(cache=True)
+    if len(crudo) > MAX_INGESTA_BYTES:
+        return jsonify({"error": "Cuerpo demasiado grande."}), 413
+    try:
+        payload = json.loads(crudo.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return jsonify({"error": "El cuerpo debe ser JSON."}), 422
+
+    items = payload if isinstance(payload, list) else [payload]
+    if len(items) > MAX_INGESTA_ITEMS:
+        return jsonify({"error": f"Máximo {MAX_INGESTA_ITEMS} registros por petición."}), 413
+
+    db = get_db()
+    insertados = duplicados = invalidos = 0
+    for item in items:
+        if not isinstance(item, dict):
+            invalidos += 1
+            continue
+        fecha = _fecha_de_item(item)
+        ts = fecha if fecha is not None else time.time()
+        texto = _texto_de_item(item)
+        datos = json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+        idempotencia = _campo_de_item(item, "idempotencia", "idempotency_key", limite=200)
+        if idempotencia:
+            huella = hashlib.sha256(
+                f"{fuente['id']}|idem:{idempotencia}".encode("utf-8")).hexdigest()
+        else:
+            huella = hashlib.sha256(
+                f"{fuente['id']}|{ts:.3f}|{texto}|{datos}".encode("utf-8")).hexdigest()
+        try:
+            db.execute(
+                "INSERT INTO registros "
+                "(ts, fuente_id, fuente, tipo, ruta, usuario, texto, datos, huella, ip) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, fuente["id"], fuente["nombre"],
+                 _campo_de_item(item, "tipo", "type", limite=40),
+                 _campo_de_item(item, "ruta", "path", limite=300),
+                 _campo_de_item(item, "usuario", "correo", "email", "user", limite=200),
+                 texto, datos, huella, ip_cliente()))
+            insertados += 1
+        except sqlite3.IntegrityError:
+            duplicados += 1
+
+    seguridad.marcar_uso_fuente(db, fuente["id"])
+    db.commit()
+    estado = 201 if insertados else 200
+    return jsonify({"ok": True, "fuente": fuente["nombre"], "insertados": insertados,
+                    "duplicados": duplicados, "invalidos": invalidos}), estado
+
+
+def _pagina_registros():
+    try:
+        pagina = int(request.args.get("pagina", "1"))
+    except (TypeError, ValueError):
+        pagina = 1
+    return max(1, pagina)
+
+
+def _filtros_registros():
+    return ((request.args.get("fuente") or "").strip(),
+            (request.args.get("q") or "").strip())
+
+
+def _where_registros(fuente, q):
+    condiciones, argumentos = [], []
+    if fuente:
+        condiciones.append("fuente = ?")
+        argumentos.append(fuente)
+    if q:
+        like = f"%{q}%"
+        condiciones.append("(texto LIKE ? OR datos LIKE ? OR COALESCE(ruta, '') LIKE ? "
+                           "OR COALESCE(usuario, '') LIKE ?)")
+        argumentos.extend([like, like, like, like])
+    return ((" WHERE " + " AND ".join(condiciones)) if condiciones else ""), argumentos
+
+
+def _volver_a_registros():
+    argumentos = {}
+    for clave, valor in (("fuente", request.form.get("fuente")),
+                         ("q", request.form.get("q")),
+                         ("pagina", request.form.get("pagina"))):
+        valor = (valor or "").strip()
+        if valor and not (clave == "pagina" and valor == "1"):
+            argumentos[clave] = valor
+    return url_for("registros", **argumentos)
+
+
+def _render_registros(token_nuevo=None):
+    db = get_db()
+    fuente, q = _filtros_registros()
+    pagina = _pagina_registros()
+    where, argumentos = _where_registros(fuente, q)
+    total = db.execute("SELECT COUNT(*) FROM registros" + where, argumentos).fetchone()[0]
+    paginas = max(1, (total + REGISTROS_POR_PAGINA - 1) // REGISTROS_POR_PAGINA)
+    pagina = min(pagina, paginas)
+    filas = db.execute(
+        "SELECT * FROM registros" + where + " ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?",
+        argumentos + [REGISTROS_POR_PAGINA, (pagina - 1) * REGISTROS_POR_PAGINA]).fetchall()
+
+    registros = []
+    for fila in filas:
+        try:
+            bonito = json.dumps(json.loads(fila["datos"]), indent=2, ensure_ascii=False)
+        except (TypeError, ValueError):
+            bonito = fila["datos"]
+        resumen = " ".join((fila["texto"] or "").split())
+        registros.append({
+            **dict(fila),
+            "json": bonito,
+            "fecha_iso": datetime.fromtimestamp(fila["ts"], timezone.utc).isoformat(),
+            "fecha_legible": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(fila["ts"])),
+            "resumen": (resumen[:160] + "…") if len(resumen) > 160 else resumen,
+        })
+
+    fuentes = []
+    for fila in seguridad.listar_fuentes(db):
+        fuentes.append({**dict(fila),
+                        "ultimo_uso_legible": (time.strftime(
+                            "%Y-%m-%d %H:%M", time.localtime(fila["ultimo_uso"]))
+                            if fila["ultimo_uso"] else None)})
+    fuentes_filtro = [fila["fuente"] for fila in db.execute(
+        "SELECT DISTINCT fuente FROM registros ORDER BY fuente")]
+
+    argumentos_exportar = {"fuente": fuente, "q": q}
+    return render_template(
+        "registros.html",
+        fuentes=fuentes,
+        fuentes_filtro=fuentes_filtro,
+        registros=registros,
+        registros_jsonl="\n".join(r["datos"] for r in registros) + ("\n" if registros else ""),
+        total=total,
+        pagina=pagina,
+        paginas=paginas,
+        fuente=fuente,
+        q=q,
+        token_nuevo=token_nuevo,
+        url_exportar_jsonl=url_for("exportar_registros", formato="jsonl", **argumentos_exportar),
+        url_exportar_csv=url_for("exportar_registros", formato="csv", **argumentos_exportar),
+    )
+
+
+@app.route("/registros")
+@admin_required
+def registros():
+    return _render_registros()
+
+
+@app.route("/registros/fuentes", methods=["POST"])
+@admin_required
+def crear_fuente_registros():
+    fila, token, error = seguridad.crear_fuente(get_db(), request.form.get("nombre"))
+    if error:
+        flash(error, "error")
+        return redirect(url_for("registros"))
+    return _render_registros(token_nuevo={**fila, "token": token})
+
+
+@app.route("/registros/fuentes/<int:fuente_id>/borrar", methods=["POST"])
+@admin_required
+def borrar_fuente_registros(fuente_id):
+    if seguridad.borrar_fuente(get_db(), fuente_id):
+        flash("Fuente eliminada. Su token ya no funciona; sus registros se conservan.", "success")
+    return redirect(url_for("registros"))
+
+
+@app.route("/registros/<int:registro_id>/borrar", methods=["POST"])
+@admin_required
+def borrar_registro(registro_id):
+    db = get_db()
+    db.execute("DELETE FROM registros WHERE id = ?", (registro_id,))
+    db.commit()
+    flash("Registro eliminado.", "success")
+    return redirect(_volver_a_registros())
+
+
+@app.route("/registros/borrar", methods=["POST"])
+@admin_required
+def borrar_registros():
+    if (request.form.get("confirmar") or "").strip().upper() != "BORRAR":
+        flash("Escribe BORRAR para confirmar el borrado.", "error")
+        return redirect(_volver_a_registros())
+    fuente, q = ((request.form.get("fuente") or "").strip(),
+                 (request.form.get("q") or "").strip())
+    where, argumentos = _where_registros(fuente, q)
+    db = get_db()
+    cur = db.execute("DELETE FROM registros" + where, argumentos)
+    db.commit()
+    flash(f"{cur.rowcount} registros eliminados.", "success")
+    return redirect(url_for("registros"))
+
+
+@app.route("/registros/exportar")
+@admin_required
+def exportar_registros():
+    formato = (request.args.get("formato") or "jsonl").lower()
+    fuente, q = _filtros_registros()
+    where, argumentos = _where_registros(fuente, q)
+    filas = get_db().execute(
+        "SELECT * FROM registros" + where + " ORDER BY ts DESC, id DESC", argumentos).fetchall()
+    sello = time.strftime("%Y%m%d-%H%M")
+
+    if formato == "jsonl":
+        contenido = "\n".join(fila["datos"] for fila in filas)
+        if contenido:
+            contenido += "\n"
+        return Response(contenido, mimetype="application/x-ndjson", headers={
+            "Content-Disposition": f'attachment; filename="registros-{sello}.jsonl"'})
+
+    if formato == "csv":
+        salida = io.StringIO()
+        escritor = csv.writer(salida)
+        escritor.writerow(["fecha", "fuente", "tipo", "ruta", "usuario", "texto", "datos"])
+        for fila in filas:
+            escritor.writerow([
+                datetime.fromtimestamp(fila["ts"], timezone.utc).isoformat(),
+                fila["fuente"], fila["tipo"] or "", fila["ruta"] or "",
+                fila["usuario"] or "", fila["texto"], fila["datos"]])
+        return Response(salida.getvalue(), mimetype="text/csv; charset=utf-8", headers={
+            "Content-Disposition": f'attachment; filename="registros-{sello}.csv"'})
+
+    abort(400)
 
 
 # --------------------------------------------------------------------------

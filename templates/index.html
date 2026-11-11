@@ -145,6 +145,9 @@
                 aria-controls="agente" aria-expanded="false">{{ icono('chispa', 16) }}<span class="texto-boton">Asistente</span></button>
         {% endif %}
         <a class="boton-icono" href="{{ url_for('servidor') }}" title="Servicios del servidor" aria-label="Servicios del servidor">{{ icono('servidor', 16) }}<span class="texto-menu">Servidor</span></a>
+        {% if es_admin %}
+        <a class="boton-icono" href="{{ url_for('registros') }}" title="Registros de herramientas" aria-label="Registros de herramientas">{{ icono('registro', 16) }}<span class="texto-menu">Registros</span></a>
+        {% endif %}
         <button class="boton-icono" data-abrir="dlg-ajustes" title="Configuración de entornos" aria-label="Configuración de entornos">{{ icono('ajustes', 16) }}<span class="texto-menu">Entornos</span></button>
       </div>
 

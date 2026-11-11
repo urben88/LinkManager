@@ -96,6 +96,31 @@ CREATE TABLE IF NOT EXISTS consola_tickets (
     terminal TEXT NOT NULL,
     expira REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS log_fuentes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL UNIQUE,       -- nombre visible / herramienta
+    prefijo TEXT NOT NULL,             -- primeros caracteres, para reconocerlo
+    token_hash TEXT NOT NULL UNIQUE,   -- sha256 del token; el token no se guarda
+    creado TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ultimo_uso REAL,
+    activo INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS registros (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,                  -- fecha del registro (epoch)
+    fuente_id INTEGER,
+    fuente TEXT NOT NULL,              -- nombre de la fuente en el momento de entrar
+    tipo TEXT,
+    ruta TEXT,
+    usuario TEXT,
+    texto TEXT NOT NULL,
+    datos TEXT NOT NULL,               -- JSON original, tal cual llegó
+    huella TEXT NOT NULL UNIQUE,       -- evita duplicados al reintentar
+    ip TEXT,
+    creado TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS registros_ts ON registros(ts);
+CREATE INDEX IF NOT EXISTS registros_fuente ON registros(fuente);
 """
 
 
@@ -336,3 +361,49 @@ def canjear_ticket(con, ticket, sid_hash, terminal) -> bool:
                       "AND expira > ?", (_h(ticket), sid_hash, terminal, time.time()))
     con.commit()
     return cur.rowcount == 1
+
+
+# --------------------------------------------------------------------------
+#  Fuentes de registros: un token por herramienta
+# --------------------------------------------------------------------------
+
+def crear_fuente(con, nombre):
+    """Crea una fuente y devuelve (fila, token, error).
+
+    El token solo se devuelve aquí; en la base queda su SHA-256. El nombre es
+    el que verá el visor de registros como origen de los datos.
+    """
+    nombre = " ".join(str(nombre or "").split())
+    if not 2 <= len(nombre) <= 60:
+        return None, None, "El nombre debe tener entre 2 y 60 caracteres."
+    token = "lml_" + secrets.token_urlsafe(32)
+    try:
+        cur = con.execute(
+            "INSERT INTO log_fuentes (nombre, prefijo, token_hash) VALUES (?, ?, ?)",
+            (nombre, token[:12], _h(token)))
+        con.commit()
+    except sqlite3.IntegrityError:
+        return None, None, f"Ya existe una fuente llamada «{nombre}»."
+    fila = con.execute("SELECT * FROM log_fuentes WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return dict(fila), token, None
+
+
+def listar_fuentes(con):
+    return con.execute("SELECT * FROM log_fuentes ORDER BY nombre").fetchall()
+
+
+def fuente_por_token(con, token):
+    if not token:
+        return None
+    return con.execute("SELECT * FROM log_fuentes WHERE token_hash = ? AND activo = 1",
+                       (_h(token),)).fetchone()
+
+
+def marcar_uso_fuente(con, fuente_id):
+    con.execute("UPDATE log_fuentes SET ultimo_uso = ? WHERE id = ?", (time.time(), fuente_id))
+
+
+def borrar_fuente(con, fuente_id):
+    cur = con.execute("DELETE FROM log_fuentes WHERE id = ?", (fuente_id,))
+    con.commit()
+    return cur.rowcount

@@ -1,0 +1,237 @@
+{% from "_macros.html" import icono %}
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registros — LinkManager</title>
+  <link rel="icon" href="{{ url_for('static', filename='images/icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<header class="cabecera">
+  <div class="cabecera-fila cabecera-fila--simple">
+    <a class="marca" href="{{ url_for('index') }}">
+      <picture>
+        <source media="(max-width: 720px)" srcset="{{ url_for('static', filename='images/icon.png') }}">
+        <img src="{{ url_for('static', filename='images/linkmanager-logo.png') }}" alt="LinkManager">
+      </picture>
+    </a>
+
+    <div class="cabecera-acciones">
+      <a class="boton" href="{{ url_for('index') }}" aria-label="Volver a los enlaces">{{ icono('volver', 15) }}<span class="texto-boton">Volver</span></a>
+      <a class="boton" href="{{ url_for('servidor') }}" aria-label="Servidor">{{ icono('servidor', 15) }}<span class="texto-boton">Servidor</span></a>
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="boton-icono" title="Salir" aria-label="Cerrar sesión">{{ icono('salir', 16) }}</button>
+      </form>
+    </div>
+  </div>
+</header>
+
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+{% if mensajes %}
+<div class="avisos" id="avisos">
+  {% for categoria, mensaje in mensajes %}
+  <div class="aviso aviso--{{ categoria }}">
+    <span>{{ mensaje }}</span>
+    <button type="button" aria-label="Cerrar">{{ icono('cerrar', 14) }}</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
+<main class="contenido registros">
+  <div class="resumen">
+    <span class="resumen-dato"><strong>{{ total }}</strong> registros</span>
+    <span class="resumen-dato"><strong>{{ fuentes | length }}</strong> fuentes</span>
+    <span class="tenue">Solo administradores</span>
+    <a class="resumen-plegar" href="{{ url_for('registros', fuente=fuente, q=q) }}">{{ icono('refrescar', 14) }} Actualizar</a>
+  </div>
+
+  {% if token_nuevo %}
+  <section class="token-nuevo" aria-live="polite">
+    <h2>Token de «{{ token_nuevo.nombre }}»</h2>
+    <p><strong>Cópialo ahora:</strong> no se vuelve a mostrar.</p>
+    <div class="token-fila">
+      <code id="token-nuevo-valor">{{ token_nuevo.token }}</code>
+      <button class="boton" type="button" data-copiar="token-nuevo-valor">Copiar token</button>
+    </div>
+    <p class="tenue">Comando listo para pegar en la herramienta:</p>
+    <pre id="token-nuevo-curl">curl -X POST https://www.urbenserver.com/api/ingesta \
+  -H "Authorization: Bearer {{ token_nuevo.token }}" \
+  -H "Content-Type: application/json" \
+  -d '{"tipo":"anotacion","texto":"prueba","ruta":"/"}'</pre>
+    <button class="boton" type="button" data-copiar="token-nuevo-curl">Copiar comando</button>
+  </section>
+  {% endif %}
+
+  <div class="registros-columnas">
+    <section class="seccion">
+      <div class="seccion-cabecera">
+        <h2 class="seccion-titulo">Fuentes y tokens</h2>
+      </div>
+      <p class="tenue">Cada token identifica una herramienta. Su nombre es el que verás como origen de los registros.</p>
+
+      <form class="form-fuente" method="post" action="{{ url_for('crear_fuente_registros') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="campo">
+          <label for="nombre-fuente">Nombre de la herramienta</label>
+          <input id="nombre-fuente" name="nombre" type="text" maxlength="60"
+                 placeholder="p. ej. abogados" autocomplete="off" required>
+        </div>
+        <button class="boton boton--principal" type="submit">{{ icono('mas', 15) }} Crear token</button>
+      </form>
+
+      {% if fuentes %}
+      <div class="tabla-envoltorio">
+        <table class="tabla">
+          <thead>
+            <tr><th>Fuente</th><th>Token</th><th class="ocultar-movil">Creado</th><th>Último uso</th><th><span class="oculto-visualmente">Acciones</span></th></tr>
+          </thead>
+          <tbody>
+          {% for f in fuentes %}
+            <tr>
+              <td><strong>{{ f.nombre }}</strong></td>
+              <td><code class="mono">{{ f.prefijo }}…</code></td>
+              <td class="tenue ocultar-movil">{{ f.creado[:16] }}</td>
+              <td class="tenue fecha-celda">{{ f.ultimo_uso_legible or 'nunca' }}</td>
+              <td>
+                <form method="post" action="{{ url_for('borrar_fuente_registros', fuente_id=f.id) }}"
+                      data-confirmar="¿Borrar la fuente «{{ f.nombre }}»? Su token dejará de funcionar, pero sus registros se conservan.">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                  <button class="boton boton--plano boton--peligro" type="submit"
+                          title="Borrar la fuente {{ f.nombre }}" aria-label="Borrar la fuente {{ f.nombre }}">{{ icono('papelera', 15) }}</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="vacio">Todavía no hay fuentes. Crea la primera arriba.</p>
+      {% endif %}
+
+      <details class="guia">
+        <summary>Cómo generar tokens y enviar registros</summary>
+        <ol>
+          <li>Escribe el nombre de la herramienta y pulsa <strong>Crear token</strong>.</li>
+          <li>Copia el token y el comando que aparecen arriba. El token no se vuelve a mostrar.</li>
+          <li>La herramienta (o un pequeño colector en su servidor) hace un POST a la URL con la cabecera <code>Authorization: Bearer &lt;token&gt;</code>; cada POST guarda un registro.</li>
+        </ol>
+        <p class="tenue">El token es un secreto de servidor: no lo pongas en el JavaScript del navegador. Si la herramienta no puede hacer HTTP, un colector puede leer su archivo de log y reenviar cada línea con este mismo contrato.</p>
+        <pre>curl -X POST https://www.urbenserver.com/api/ingesta \
+  -H "Authorization: Bearer &lt;TOKEN&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"tipo":"log","texto":"hola","ruta":"/","usuario":"yo"}'</pre>
+        <p class="tenue">Campos recomendados: <code>tipo</code>, <code>fecha</code> (ISO 8601), <code>ruta</code>, <code>usuario</code>, <code>texto</code> y <code>datos</code>. Cualquier JSON extra se guarda tal cual. Si incluyes <code>fecha</code> o <code>idempotencia</code>, los reintentos no duplican el registro. Si pierdes un token, borra la fuente y crea otra; los registros anteriores se conservan.</p>
+      </details>
+    </section>
+
+    <section class="seccion">
+      <div class="seccion-cabecera">
+        <h2 class="seccion-titulo">Registros</h2>
+      </div>
+
+      <form class="filtros-registros" method="get" action="{{ url_for('registros') }}">
+        <div class="campo">
+          <label for="q">Buscar</label>
+          <input id="q" name="q" type="search" value="{{ q }}" placeholder="Texto, ruta, usuario…" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="fuente-filtro">Fuente</label>
+          <select id="fuente-filtro" name="fuente">
+            <option value="">Todas</option>
+            {% for nombre in fuentes_filtro %}
+            <option value="{{ nombre }}" {% if nombre == fuente %}selected{% endif %}>{{ nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="boton" type="submit">Filtrar</button>
+        {% if q or fuente %}<a class="boton boton--plano" href="{{ url_for('registros') }}">Limpiar</a>{% endif %}
+      </form>
+
+      <div class="registros-acciones">
+        <a class="boton" href="{{ url_exportar_jsonl }}">{{ icono('documento', 15) }} Exportar JSONL</a>
+        <a class="boton" href="{{ url_exportar_csv }}">{{ icono('documento', 15) }} Exportar CSV</a>
+        {% if registros %}
+        <button class="boton" type="button" data-copiar="registros-jsonl">Copiar página (JSONL)</button>
+        <textarea id="registros-jsonl" class="oculto-visualmente" aria-label="Registros de esta página en JSONL" readonly>{{ registros_jsonl }}</textarea>
+        {% endif %}
+      </div>
+
+      {% if registros %}
+      <div class="registros-lista">
+        {% for r in registros %}
+        <article class="registro">
+          <div class="registro-cab">
+            <time datetime="{{ r.fecha_iso }}" data-ts="{{ r.ts }}" title="{{ r.fecha_iso }}">{{ r.fecha_legible }} UTC</time>
+            <span class="insignia insignia--fuente">{{ r.fuente }}</span>
+            {% if r.tipo %}<span class="insignia">{{ r.tipo }}</span>{% endif %}
+            {% if r.ruta %}<code class="mono registro-ruta">{{ r.ruta }}</code>{% endif %}
+            {% if r.usuario %}<span class="tenue">{{ r.usuario }}</span>{% endif %}
+          </div>
+          <details>
+            <summary>{{ r.resumen or '(sin texto)' }}</summary>
+            <pre class="registro-json">{{ r.json }}</pre>
+          </details>
+          <div class="registro-acciones">
+            <button class="boton" type="button" data-copiar="json-{{ r.id }}">Copiar JSON</button>
+            <button class="boton" type="button" data-copiar="texto-{{ r.id }}">Copiar texto</button>
+            <pre id="json-{{ r.id }}" class="oculto-visualmente">{{ r.json }}</pre>
+            <pre id="texto-{{ r.id }}" class="oculto-visualmente">{{ r.texto }}</pre>
+            <form method="post" action="{{ url_for('borrar_registro', registro_id=r.id) }}"
+                  data-confirmar="¿Borrar este registro?">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <input type="hidden" name="fuente" value="{{ fuente }}">
+              <input type="hidden" name="q" value="{{ q }}">
+              <input type="hidden" name="pagina" value="{{ pagina }}">
+              <button class="boton boton--plano boton--peligro" type="submit">{{ icono('papelera', 15) }} Borrar</button>
+            </form>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+
+      {% if paginas > 1 %}
+      <nav class="paginacion" aria-label="Páginas de registros">
+        {% if pagina > 1 %}<a class="boton" href="{{ url_for('registros', fuente=fuente, q=q, pagina=pagina - 1) }}">Anterior</a>{% endif %}
+        <span class="tenue">Página {{ pagina }} de {{ paginas }}</span>
+        {% if pagina < paginas %}<a class="boton" href="{{ url_for('registros', fuente=fuente, q=q, pagina=pagina + 1) }}">Siguiente</a>{% endif %}
+      </nav>
+      {% endif %}
+
+      <details class="borrar-todo">
+        <summary>Borrar registros…</summary>
+        <form method="post" action="{{ url_for('borrar_registros') }}"
+              data-confirmar="Se borrarán los registros que coincidan con el filtro. ¿Continuar?">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="fuente" value="{{ fuente }}">
+          <input type="hidden" name="q" value="{{ q }}">
+          <p>Se borrarán <strong>{{ total }}</strong> registros{% if fuente %} de «{{ fuente }}»{% endif %}{% if q %} que coincidan con «{{ q }}»{% endif %}.</p>
+          <div class="campo">
+            <label for="confirmar-borrado">Escribe BORRAR para confirmar</label>
+            <input id="confirmar-borrado" name="confirmar" type="text" autocomplete="off" required>
+          </div>
+          <button class="boton boton--peligro" type="submit">Borrar {{ total }} registros</button>
+        </form>
+      </details>
+
+      {% else %}
+      <div class="vacio">
+        <h3>No hay registros{% if q or fuente %} con ese filtro{% endif %}</h3>
+        <p>Cuando una herramienta envíe datos con su token, aparecerán aquí.</p>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+</main>
+
+<script src="{{ url_for('static', filename='js/registros.js') }}"></script>
+</body>
+</html>
